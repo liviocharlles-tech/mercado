@@ -128,6 +128,36 @@
   }
 
   main#view{padding:20px 20px 90px;}
+  #back-bar:empty{display:none;}
+  .back-btn{
+    background:none;border:none;cursor:pointer;color:var(--green);
+    font-family:'Manrope';font-weight:800;font-size:13px;padding:0 0 14px;
+    display:flex;align-items:center;gap:4px;
+  }
+  .back-btn:hover{text-decoration:underline;}
+
+  .picker-btn{
+    width:100%;display:flex;align-items:center;gap:10px;
+    padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:#fff;cursor:pointer;font-family:'Manrope';font-size:13.5px;color:var(--ink);
+  }
+  .picker-list{
+    border:1px solid var(--line);border-radius:var(--radius-sm);margin-top:6px;
+    max-height:280px;overflow-y:auto;background:#fff;box-shadow:var(--shadow-md);
+  }
+  .picker-item{
+    display:flex;align-items:center;gap:10px;padding:9px 10px;cursor:pointer;
+    border-bottom:1px solid var(--line);
+  }
+  .picker-item:last-child{border-bottom:none;}
+  .picker-item:hover{background:var(--surface-2);}
+  .picker-placeholder{color:var(--mango);font-weight:700;}
+  .picker-search{
+    width:100%;border:none;border-bottom:1px solid var(--line);padding:10px 12px;
+    font-family:'Manrope';font-size:13.5px;background:var(--surface-2);
+    position:sticky;top:0;z-index:1;
+  }
+  .picker-search:focus{outline:none;background:#fff;}
 
   h2.section-title{
     font-size:17px;margin:0 0 4px;color:var(--ink);
@@ -355,6 +385,8 @@ let state = {
   editing: {mercado:null, produto:null, usuario:null},
   importadosNota: null,
   importadosSelecionados: [],
+  mostrarFormMercado: false,
+  mostrarFormProduto: false,
 };
 
 async function loadAll(){
@@ -398,7 +430,7 @@ async function loadAll(){
 function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
 function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade, imagemUrl:m.imagem_url, cor:m.cor}; }
 function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco), imagemUrl:p.imagem_url}; }
-function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url, pego:!!it.pego}; }
+function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url, pego:!!it.pego, precoReal: it.preco_real===null||it.preco_real===undefined ? null : Number(it.preco_real)}; }
 
 /* ---------------------------------------------------------
    Bootstrap / render loop
@@ -417,6 +449,9 @@ async function init(){
     if(editando) return; // não atualiza a tela enquanto alguém está digitando, para não apagar o que foi escrito
     if(!state.authUser) return;
     if(state.tab === 'qr') return; // não redesenha a aba de QR: apagaria o resultado lido e cortaria a câmera aberta
+    if(temSubtelaAberta()) return; // não redesenha enquanto um formulário (produto, mercado, importação) está aberto
+    const algumaListaAberta = Array.from(document.querySelectorAll('.picker-list')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
+    if(algumaListaAberta) return; // não redesenha enquanto a lista de seleção está aberta
     await loadAll();
     render(true);
   }, 4000);
@@ -430,15 +465,36 @@ function render(silent){
     return;
   }
   const view = $('#view');
+  view.innerHTML = `<div id="back-bar"></div><div id="tab-content"></div>`;
+  renderBackBar();
+  const content = $('#tab-content');
   switch(state.tab){
-    case 'compra': renderCompra(view); break;
-    case 'mercados': renderMercados(view); break;
-    case 'produtos': renderProdutos(view); break;
-    case 'usuarios': renderUsuarios(view); break;
-    case 'historico': renderHistorico(view); break;
-    case 'qr': renderQR(view); break;
-    default: renderCompra(view);
+    case 'compra': renderCompra(content); break;
+    case 'mercados': renderMercados(content); break;
+    case 'produtos': renderProdutos(content); break;
+    case 'usuarios': renderUsuarios(content); break;
+    case 'historico': renderHistorico(content); break;
+    case 'qr': renderQR(content); break;
+    default: renderCompra(content);
   }
+}
+function temSubtelaAberta(){
+  if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)) return true;
+  if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)) return true;
+  if(state.tab==='qr' && state.importadosNota) return true;
+  return false;
+}
+function voltar(){
+  if(state.tab==='qr' && state.importadosNota){ state.importadosNota=null; state.importadosSelecionados=[]; render(); return; }
+  if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)){ cancelarEdicaoMercado(); return; }
+  if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)){ cancelarEdicaoProduto(); return; }
+  setTab('compra');
+}
+function renderBackBar(){
+  const bar = $('#back-bar');
+  if(!bar) return;
+  const mostrar = temSubtelaAberta() || state.tab !== 'compra';
+  bar.innerHTML = mostrar ? `<button class="back-btn" onclick="voltar()">← Voltar</button>` : '';
 }
 
 function setTab(t){
@@ -644,9 +700,12 @@ sb.auth.onAuthStateChange((event, session)=>{
 function renderMercados(view){
   const ed = state.editing.mercado;
   const corAtual = ed && ed.cor ? ed.cor : '#1F6B45';
+  const mostrarForm = state.mostrarFormMercado || !!ed;
   view.innerHTML = `
     <h2 class="section-title">Supermercados da região</h2>
-    <p class="section-hint">Cadastre os mercados onde vocês costumam comprar, na Região Metropolitana do Recife.</p>
+    <p class="section-hint">Mercados onde vocês costumam comprar, na Região Metropolitana do Recife.</p>
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoMercado()">+ Novo mercado</button><div style="height:14px"></div>` : ''}
+    ${mostrarForm ? `
     <form class="form-block" onsubmit="return salvarMercado(event)">
       <div class="field"><label>Nome do mercado</label><input required id="mc-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Bompreço Shopping Recife"></div>
       <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px;margin-bottom:10px" onclick="buscarMercadoInternet()">🔍 Buscar mercado na internet</button>
@@ -684,8 +743,9 @@ function renderMercados(view){
         </div>
       </div>
       <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar mercado'}</button>
-      ${ed?`<button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoMercado()">Cancelar</button>`:''}
+      <button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoMercado()">Cancelar</button>
     </form>
+    ` : ''}
     <div id="lista-mercados"></div>
   `;
   const box = $('#lista-mercados');
@@ -833,11 +893,13 @@ async function salvarMercado(e){
     if(error){ dbErr('cadastrar mercado', error); return false; }
   }
   await loadAll();
+  state.mostrarFormMercado = false;
   render();
   return false;
 }
-function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); render(); }
-function cancelarEdicaoMercado(){ state.editing.mercado=null; render(); }
+function abrirNovoMercado(){ state.mostrarFormMercado = true; state.editing.mercado = null; render(); }
+function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); state.mostrarFormMercado = true; render(); }
+function cancelarEdicaoMercado(){ state.editing.mercado=null; state.mostrarFormMercado=false; render(); }
 async function excluirMercado(id){
   if(!confirm('Excluir este mercado?')) return;
   const {error} = await sb.from('feira_mercados').delete().eq('id', id);
@@ -851,9 +913,12 @@ async function excluirMercado(id){
 --------------------------------------------------------- */
 function renderProdutos(view){
   const ed = state.editing.produto;
+  const mostrarForm = state.mostrarFormProduto || !!ed;
   view.innerHTML = `
     <h2 class="section-title">Produtos</h2>
     <p class="section-hint">Nome, categoria, unidade de medida, preço atual e uma foto (opcional). Qualquer usuário cadastrado pode inserir, editar ou excluir.</p>
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoProduto()">+ Novo produto</button><div style="height:14px"></div>` : ''}
+    ${mostrarForm ? `
     <form class="form-block" onsubmit="return salvarProduto(event)">
       <div class="field"><label>Nome do produto</label><input required id="pr-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Arroz branco"></div>
       <div class="field-row">
@@ -883,8 +948,9 @@ function renderProdutos(view){
         </div>
       </div>
       <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar produto'}</button>
-      ${ed?`<button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoProduto()">Cancelar</button>`:''}
+      <button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoProduto()">Cancelar</button>
     </form>
+    ` : ''}
     <div id="lista-produtos"></div>
   `;
   const box = $('#lista-produtos');
@@ -946,20 +1012,32 @@ async function salvarProduto(e){
   const categoria = $('#pr-categoria').value;
   const unidade = $('#pr-unidade').value;
   const imagem_url = $('#pr-imagem-url').value.trim() || null;
+
   if(state.editing.produto){
     const {error} = await sb.from('feira_produtos').update({nome,categoria,unidade,preco,imagem_url,atualizado_em:new Date().toISOString()}).eq('id', state.editing.produto.id);
     if(error){ dbErr('salvar produto', error); return false; }
     state.editing.produto = null;
   } else {
-    const {error} = await sb.from('feira_produtos').insert({nome,categoria,unidade,preco,imagem_url});
-    if(error){ dbErr('cadastrar produto', error); return false; }
+    // verifica duplicidade por nome (ignorando maiúsculas/minúsculas e acentos) antes de cadastrar
+    const existente = state.produtos.find(p => normalizarTexto(p.nome) === normalizarTexto(nome));
+    if(existente){
+      const atualizar = confirm(`Já existe um produto chamado "${existente.nome}" (preço atual ${fmtBRL(existente.preco)}).\n\nClique OK para atualizar esse produto com os novos dados, ou Cancelar para não cadastrar (evitando um duplicado).`);
+      if(!atualizar) return false;
+      const {error} = await sb.from('feira_produtos').update({categoria,unidade,preco,imagem_url,atualizado_em:new Date().toISOString()}).eq('id', existente.id);
+      if(error){ dbErr('atualizar produto existente', error); return false; }
+    } else {
+      const {error} = await sb.from('feira_produtos').insert({nome,categoria,unidade,preco,imagem_url});
+      if(error){ dbErr('cadastrar produto', error); return false; }
+    }
   }
   await loadAll();
+  state.mostrarFormProduto = false;
   render();
   return false;
 }
-function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); render(); }
-function cancelarEdicaoProduto(){ state.editing.produto=null; render(); }
+function abrirNovoProduto(){ state.mostrarFormProduto = true; state.editing.produto = null; render(); }
+function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); state.mostrarFormProduto = true; render(); }
+function cancelarEdicaoProduto(){ state.editing.produto=null; state.mostrarFormProduto=false; render(); }
 async function excluirProduto(id){
   if(!confirm('Excluir este produto?')) return;
   const {error} = await sb.from('feira_produtos').delete().eq('id', id);
@@ -1016,9 +1094,12 @@ async function excluirUsuario(id){
 /* ---------------------------------------------------------
    Compra atual (lista online compartilhada)
 --------------------------------------------------------- */
+function valorItem(it){
+  return (it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit) * it.quantidade;
+}
 function totalCompra(c){
   if(!c) return 0;
-  return c.itens.reduce((s,it)=>s+it.precoUnit*it.quantidade,0);
+  return c.itens.reduce((s,it)=>s+valorItem(it),0);
 }
 
 function renderCompra(view){
@@ -1035,9 +1116,14 @@ function renderCompra(view){
       <p class="section-hint">Escolha o mercado. Todos que abrirem este mesmo link verão a lista e o total atualizados em tempo real.</p>
       <form class="form-block" onsubmit="return iniciarCompra(event)">
         <div class="field"><label>Mercado</label>
-          <select id="cp-mercado">
-            ${state.mercados.map(m=>`<option value="${m.id}">${esc(m.nome)} — ${esc(m.cidade)}</option>`).join('')}
-          </select>
+          <button type="button" class="picker-btn" id="picker-mercado-btn" onclick="togglePickerMercado()"><span class="picker-placeholder">👆 Toque para selecionar o mercado</span></button>
+          <div id="picker-mercado-list" class="picker-list" style="display:none">
+            <input type="text" class="picker-search" placeholder="Digite para buscar..." oninput="filtrarPickerMercado(this.value)">
+            <div id="picker-mercado-itens">
+              ${state.mercados.map(m=>`<div class="picker-item" data-nome="${esc(normalizarTexto(m.nome))}" onclick="selecionarMercadoPicker('${m.id}')">${pickerItemHTML(m)}</div>`).join('')}
+            </div>
+          </div>
+          <input type="hidden" id="cp-mercado" value="">
         </div>
         <button class="btn" type="submit">Começar lista</button>
       </form>
@@ -1060,18 +1146,23 @@ function renderCompra(view){
 
     <form class="form-block" onsubmit="return adicionarItem(event)" style="display:flex;flex-direction:column;">
       <div class="field"><label>Produto</label>
-        <select id="it-produto" ${produtosDisponiveis.length===0?'disabled':''}>
-          ${produtosDisponiveis.length===0
-            ? `<option>Nenhum produto cadastrado</option>`
-            : [...produtosDisponiveis].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(p=>`<option value="${p.id}">${esc(p.nome)} · ${fmtBRL(p.preco)}/${esc(p.unidade)}</option>`).join('')}
-        </select>
+        ${produtosDisponiveis.length===0 ? `<div class="section-hint" style="margin:0">Nenhum produto cadastrado.</div>` : `
+          <button type="button" class="picker-btn" id="picker-produto-btn" onclick="togglePickerProduto()"><span class="picker-placeholder">👆 Toque para selecionar o produto</span></button>
+          <div id="picker-produto-list" class="picker-list" style="display:none">
+            <input type="text" class="picker-search" placeholder="Digite para buscar..." oninput="filtrarPickerProduto(this.value)">
+            <div id="picker-produto-itens">
+              ${[...produtosDisponiveis].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(p=>`<div class="picker-item" data-nome="${esc(normalizarTexto(p.nome))}" onclick="selecionarProdutoPicker('${p.id}')">${pickerItemHTML(p, true)}</div>`).join('')}
+            </div>
+          </div>
+          <input type="hidden" id="it-produto" value="">
+        `}
       </div>
       <div class="field-row">
         <div class="field"><label>Quantidade</label><input type="number" min="0.01" step="0.01" id="it-qtd" value="1"></div>
-        <div class="field" style="display:flex;align-items:flex-end;">
-          <button class="btn" type="submit" style="width:100%" ${produtosDisponiveis.length===0?'disabled':''}>Adicionar à lista</button>
-        </div>
+        <div class="field"><label>Preço (R$)</label><input type="number" min="0" step="0.01" id="it-preco" placeholder="0,00"></div>
       </div>
+      <p class="section-hint" id="it-preco-hint" style="margin:-6px 0 10px"></p>
+      <button class="btn" type="submit" ${produtosDisponiveis.length===0?'disabled':''}>Adicionar à lista</button>
     </form>
 
     ${c.itens.length===0 ? `<div class="empty">A lista está vazia. Adicione o primeiro item acima.</div>` : `
@@ -1095,7 +1186,10 @@ function renderCompra(view){
               </div>
             </td>
             <td class="qtd"><input type="number" min="0.01" step="0.01" value="${it.quantidade}" onchange="mudarQtd('${it.id}', this.value)"></td>
-            <td class="num">${fmtBRL(it.precoUnit*it.quantidade)}</td>
+            <td class="num">
+              ${fmtBRL(valorItem(it))}<br>
+              <span class="meta" style="font-size:9.5px;font-weight:400">${it.pego ? 'valor real' : 'valor parcial'}</span>
+            </td>
             <td><button class="rm" title="Remover" onclick="removerItem('${it.id}')">✕</button></td>
           </tr>
         `).join('')}
@@ -1111,15 +1205,75 @@ function renderCompra(view){
     <div class="total-strip">
       <div>
         <div class="lbl">Total da lista · ${c.itens.length} ${c.itens.length===1?'item':'itens'}</div>
+        <div class="lbl" style="opacity:0.65">real dos pegos + parcial dos demais</div>
       </div>
       <div class="val">${fmtBRL(total)}</div>
     </div>
   `;
 }
 
+function pickerItemHTML(item, ehProduto){
+  if(!item) return `<span style="color:var(--ink-faint)">Nenhum item disponível</span>`;
+  const img = item.imagemUrl
+    ? `<img src="${esc(item.imagemUrl)}" class="img-thumb img-thumb-sm" style="margin-right:0;">`
+    : `<div class="img-thumb img-thumb-sm img-thumb-empty" style="margin-right:0;">${ehProduto?'🛒':'🏬'}</div>`;
+  const meta = ehProduto ? `${fmtBRL(item.preco)}/${esc(item.unidade)}` : esc(item.cidade||'');
+  return `${img}<span style="flex:1;text-align:left;"><b>${esc(item.nome)}</b><br><span class="meta">${meta}</span></span>`;
+}
+function togglePickerMercado(){
+  const list = $('#picker-mercado-list');
+  if(!list) return;
+  const abrindo = list.style.display==='none';
+  list.style.display = abrindo ? 'block' : 'none';
+  if(abrindo){
+    const busca = list.querySelector('.picker-search');
+    if(busca){ busca.value=''; filtrarPickerMercado(''); setTimeout(()=>busca.focus(), 50); }
+  }
+}
+function filtrarPickerMercado(texto){
+  const alvo = normalizarTexto(texto);
+  $('#picker-mercado-itens').querySelectorAll('.picker-item').forEach(el=>{
+    el.style.display = el.dataset.nome.includes(alvo) ? 'flex' : 'none';
+  });
+}
+function selecionarMercadoPicker(id){
+  const m = state.mercados.find(x=>x.id===id);
+  $('#cp-mercado').value = id;
+  $('#picker-mercado-btn').innerHTML = pickerItemHTML(m);
+  $('#picker-mercado-list').style.display='none';
+}
+function togglePickerProduto(){
+  const list = $('#picker-produto-list');
+  if(!list) return;
+  const abrindo = list.style.display==='none';
+  list.style.display = abrindo ? 'block' : 'none';
+  if(abrindo){
+    const busca = list.querySelector('.picker-search');
+    if(busca){ busca.value=''; filtrarPickerProduto(''); setTimeout(()=>busca.focus(), 50); }
+  }
+}
+function filtrarPickerProduto(texto){
+  const alvo = normalizarTexto(texto);
+  $('#picker-produto-itens').querySelectorAll('.picker-item').forEach(el=>{
+    el.style.display = el.dataset.nome.includes(alvo) ? 'flex' : 'none';
+  });
+}
+function selecionarProdutoPicker(id){
+  const p = state.produtos.find(x=>x.id===id);
+  $('#it-produto').value = id;
+  $('#picker-produto-btn').innerHTML = pickerItemHTML(p, true);
+  $('#picker-produto-list').style.display='none';
+  const precoInput = $('#it-preco');
+  if(precoInput && p){
+    precoInput.value = p.preco;
+    const hint = $('#it-preco-hint');
+    if(hint) hint.textContent = 'Preço do cadastro — mude aqui se estiver diferente na prateleira; o cadastro é atualizado sozinho.';
+  }
+}
 async function iniciarCompra(e){
   e.preventDefault();
   const mercadoId = $('#cp-mercado').value;
+  if(!mercadoId){ toast('Selecione um mercado antes de continuar.'); return false; }
   const {error} = await sb.from('feira_compras').insert({mercado_id: mercadoId, status:'aberta'});
   if(error){ dbErr('iniciar compra', error); return false; }
   await loadAll();
@@ -1129,20 +1283,38 @@ async function iniciarCompra(e){
 async function adicionarItem(e){
   e.preventDefault();
   const produtoId = $('#it-produto').value;
+  if(!produtoId){ toast('Selecione um produto antes de adicionar.'); return false; }
   const qtd = parseFloat($('#it-qtd').value);
   const p = state.produtos.find(x=>x.id===produtoId);
   if(!p || !qtd || qtd<=0) return false;
+  const precoDigitado = parseFloat($('#it-preco').value);
+  const preco = (!isNaN(precoDigitado) && precoDigitado>=0) ? precoDigitado : p.preco;
+
   const {error} = await sb.from('feira_itens_compra').insert({
     compra_id: state.compraAtual.id, produto_id:p.id, nome:p.nome, unidade:p.unidade,
-    preco_unit:p.preco, quantidade:qtd, adicionado_por: state.sessionUser.nome, imagem_url: p.imagemUrl || null
+    preco_unit:preco, quantidade:qtd, adicionado_por: state.sessionUser.nome, imagem_url: p.imagemUrl || null
   });
   if(error){ dbErr('adicionar item', error); return false; }
+
+  // se o preço usado for diferente do cadastrado, atualiza o cadastro do produto automaticamente
+  if(preco !== p.preco){
+    await sb.from('feira_produtos').update({preco, atualizado_em:new Date().toISOString()}).eq('id', p.id);
+  }
   await loadAll();
   render();
   return false;
 }
 async function togglePego(itemId, pego){
-  const {error} = await sb.from('feira_itens_compra').update({pego}).eq('id', itemId);
+  const patch = {pego};
+  if(pego){
+    const it = state.compraAtual.itens.find(x=>x.id===itemId);
+    const sugestao = it ? (it.precoReal ?? it.precoUnit) : 0;
+    const digitado = prompt('Qual foi o valor real por unidade desse item? (deixe como está se não mudou)', sugestao.toFixed(2).replace('.',','));
+    if(digitado===null) return; // cancelou, não marca como pego
+    const valor = parseFloat(digitado.replace(',','.'));
+    patch.preco_real = isNaN(valor) ? sugestao : valor;
+  }
+  const {error} = await sb.from('feira_itens_compra').update(patch).eq('id', itemId);
   if(error){ dbErr('marcar item', error); return; }
   await loadAll();
   render();
@@ -1443,7 +1615,7 @@ async function confirmarImportacao(adicionarNaCompra){
   state.importadosNota = null;
   state.importadosSelecionados = [];
   toast(`${selecionados.length} produto(s) cadastrado(s)${adicionarNaCompra?' e adicionados à compra':''}!`);
-  renderQR($('#view'));
+  render();
 }
 
 function abrirImagem(url){
