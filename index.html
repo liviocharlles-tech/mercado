@@ -1097,6 +1097,10 @@ async function excluirUsuario(id){
 function valorItem(it){
   return (it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit) * it.quantidade;
 }
+function totalParcialCompra(c){
+  if(!c) return 0;
+  return c.itens.reduce((s,it)=>s+it.precoUnit*it.quantidade,0);
+}
 function totalCompra(c){
   if(!c) return 0;
   return c.itens.reduce((s,it)=>s+valorItem(it),0);
@@ -1181,13 +1185,14 @@ function renderCompra(view){
                   ? `<img src="${esc(it.imagemUrl)}" class="img-thumb img-thumb-sm" onclick="abrirImagem('${esc(it.imagemUrl)}')">`
                   : `<div class="img-thumb img-thumb-sm img-thumb-empty">🛒</div>`}
                 <div>
-                  ${esc(it.nome)}<br><span class="meta" style="font-size:10.5px">${it.precoUnit?fmtBRL(it.precoUnit):''}/${esc(it.unidade)} · add. ${esc(it.adicionadoPor||'—')}</span>
+                  ${esc(it.nome)}<br><span class="meta" style="font-size:10.5px">add. ${esc(it.adicionadoPor||'—')}</span>
                 </div>
               </div>
             </td>
             <td class="qtd"><input type="number" min="0.01" step="0.01" value="${it.quantidade}" onchange="mudarQtd('${it.id}', this.value)"></td>
             <td class="num">
-              ${fmtBRL(valorItem(it))}<br>
+              <div class="meta" style="font-size:10px">${fmtBRL(it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)}/${esc(it.unidade)}</div>
+              <div style="font-weight:800">${fmtBRL(valorItem(it))}</div>
               <span class="meta" style="font-size:9.5px;font-weight:400">${it.pego ? 'valor real' : 'valor parcial'}</span>
             </td>
             <td><button class="rm" title="Remover" onclick="removerItem('${it.id}')">✕</button></td>
@@ -1205,7 +1210,7 @@ function renderCompra(view){
     <div class="total-strip">
       <div>
         <div class="lbl">Total da lista · ${c.itens.length} ${c.itens.length===1?'item':'itens'}</div>
-        <div class="lbl" style="opacity:0.65">real dos pegos + parcial dos demais</div>
+        <div class="lbl" style="opacity:0.85">Valor parcial: ${fmtBRL(totalParcialCompra(c))}</div>
       </div>
       <div class="val">${fmtBRL(total)}</div>
     </div>
