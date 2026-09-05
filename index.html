@@ -353,6 +353,8 @@ let state = {
   authMode: 'entrar',   // 'entrar' | 'cadastro'
   sessionUser: null,    // linha correspondente em feira.usuarios
   editing: {mercado:null, produto:null, usuario:null},
+  importadosNota: null,
+  importadosSelecionados: [],
 };
 
 async function loadAll(){
@@ -1201,6 +1203,7 @@ function processarArquivoQR(e){
 }
 function mostrarResultadoQR(texto){
   const chave = (texto.match(/[?&]p=(\d{44})/) || texto.match(/(\d{44})/) || [])[1];
+  const ehSefaz = /^https?:\/\//i.test(texto) && /sefaz/i.test(texto);
   const out = $('#qr-output');
   out.innerHTML = `
     <div class="qr-result">
@@ -1209,7 +1212,92 @@ function mostrarResultadoQR(texto){
       ${chave ? `<div><b>Chave de acesso:</b> ${esc(chave)}</div>` : ''}
       ${/^https?:\/\//.test(texto) ? `<a href="${esc(texto)}" target="_blank" rel="noopener">Abrir nota em nova aba →</a>` : ''}
     </div>
+    ${ehSefaz ? `
+      <button class="btn" style="margin-top:10px" onclick="importarNotaFiscal('${esc(texto)}')">📥 Importar produtos desta nota</button>
+      <div id="import-status" style="margin-top:8px"></div>
+    ` : ''}
   `;
+}
+
+async function importarNotaFiscal(url){
+  const status = $('#import-status');
+  status.innerHTML = `<p class="section-hint" style="margin:0">Lendo a nota na Sefaz...</p>`;
+  const {data, error} = await sb.functions.invoke('import-nfce', { body: { url } });
+  if(error || !data || data.error){
+    status.innerHTML = `<div class="notice">Não foi possível importar: ${esc((data&&data.error) || error?.message || 'erro desconhecido')}. Você ainda pode cadastrar manualmente pela aba Produtos.</div>`;
+    return;
+  }
+  if(!data.itens || data.itens.length===0){
+    status.innerHTML = `<div class="notice">A nota foi lida, mas nenhum produto foi encontrado nela.</div>`;
+    return;
+  }
+  state.importadosNota = data;
+  state.importadosSelecionados = data.itens.map((_,i)=>i);
+  renderImportacaoNota();
+}
+
+function renderImportacaoNota(){
+  const status = $('#import-status');
+  if(!status) return;
+  const d = state.importadosNota;
+  const sel = state.importadosSelecionados;
+  status.innerHTML = `
+    <div class="card" style="margin-top:4px">
+      <div class="title">${esc(d.mercado?.nome||'Mercado da nota')}</div>
+      <div class="meta">${d.itens.length} produtos encontrados · total da nota ${fmtBRL(d.total)}</div>
+    </div>
+    <div style="max-height:340px;overflow-y:auto;margin:10px 0;">
+      ${d.itens.map((it,i)=>`
+        <label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);">
+          <input type="checkbox" class="chk-pego" ${sel.includes(i)?'checked':''} onchange="alternarSelecaoImportado(${i}, this.checked)">
+          <span style="flex:1;font-size:13px;">${esc(it.nome)}<br><span class="meta" style="font-size:11px">${it.quantidade} ${esc(it.unidade)} · ${fmtBRL(it.valorUnitario)}/${esc(it.unidade)}</span></span>
+        </label>
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" onclick="confirmarImportacao(false)">Cadastrar produtos selecionados</button>
+      ${state.compraAtual ? `<button class="btn secondary" onclick="confirmarImportacao(true)">Cadastrar e adicionar à compra atual</button>` : ''}
+    </div>
+    <p class="section-hint" style="margin-top:8px">Produtos com o mesmo nome de algo já cadastrado terão só o preço atualizado; os demais entram como novos, na categoria "Outros" (edite depois se quiser).</p>
+  `;
+}
+function alternarSelecaoImportado(i, marcado){
+  const sel = state.importadosSelecionados;
+  if(marcado && !sel.includes(i)) sel.push(i);
+  if(!marcado) state.importadosSelecionados = sel.filter(x=>x!==i);
+}
+async function confirmarImportacao(adicionarNaCompra){
+  const d = state.importadosNota;
+  const selecionados = state.importadosSelecionados.map(i=>d.itens[i]);
+  if(selecionados.length===0){ toast('Selecione ao menos um produto.'); return; }
+  const status = $('#import-status');
+  status.innerHTML = `<p class="section-hint" style="margin:0">Cadastrando...</p>`;
+
+  for(const it of selecionados){
+    const existente = state.produtos.find(p => p.nome.trim().toLowerCase() === it.nome.trim().toLowerCase());
+    let produtoId;
+    if(existente){
+      await sb.from('feira_produtos').update({preco: it.valorUnitario, unidade: it.unidade, atualizado_em:new Date().toISOString()}).eq('id', existente.id);
+      produtoId = existente.id;
+    } else {
+      const {data:novo, error} = await sb.from('feira_produtos').insert({
+        nome: it.nome, categoria:'Outros', unidade: it.unidade, preco: it.valorUnitario
+      }).select().single();
+      if(error){ dbErr('cadastrar produto da nota', error); continue; }
+      produtoId = novo.id;
+    }
+    if(adicionarNaCompra && state.compraAtual && produtoId){
+      await sb.from('feira_itens_compra').insert({
+        compra_id: state.compraAtual.id, produto_id: produtoId, nome: it.nome, unidade: it.unidade,
+        preco_unit: it.valorUnitario, quantidade: it.quantidade || 1, adicionado_por: state.sessionUser.nome
+      });
+    }
+  }
+  await loadAll();
+  state.importadosNota = null;
+  state.importadosSelecionados = [];
+  toast(`${selecionados.length} produto(s) cadastrado(s)${adicionarNaCompra?' e adicionados à compra':''}!`);
+  renderQR($('#view'));
 }
 
 function abrirImagem(url){
