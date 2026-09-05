@@ -183,6 +183,15 @@
   }
   form.form-block .field-row{display:flex;gap:10px;}
   form.form-block .field-row .field{flex:1;}
+  .pass-wrap{position:relative;}
+  .pass-wrap input{padding-right:42px;}
+  .pass-wrap .eye-btn{
+    position:absolute;right:4px;top:50%;transform:translateY(-50%);
+    background:none;border:none;cursor:pointer;color:var(--ink-faint);
+    padding:6px;display:flex;align-items:center;justify-content:center;
+    border-radius:8px;transition:color .15s ease, background .15s ease;
+  }
+  .pass-wrap .eye-btn:hover{color:var(--ink-soft);background:var(--surface-2);}
   .btn{
     display:inline-block;padding:11px 18px;background:var(--green);color:#fff;
     border:none;border-radius:999px;cursor:pointer;font-family:'Manrope';font-weight:800;font-size:13.5px;
@@ -383,7 +392,7 @@ async function init(){
 function render(silent){
   renderUserbar();
   renderTabs();
-  if(!state.sessionUser){
+  if(!state.sessionUser || state.authMode==='nova-senha'){
     renderLogin();
     return;
   }
@@ -432,28 +441,77 @@ function renderTabs(){
   tabs.innerHTML = items.map(([k,l])=>`<button class="${state.tab===k?'active':''}" onclick="setTab('${k}')">${l}</button>`).join('');
 }
 
+function campoSenha(id, placeholder){
+  return `<div class="pass-wrap">
+    <input required type="password" minlength="6" id="${id}" placeholder="${placeholder}">
+    <button type="button" class="eye-btn" onclick="toggleSenha('${id}', this)" aria-label="Mostrar senha">${eyeIconSVG(false)}</button>
+  </div>`;
+}
+function eyeIconSVG(open){
+  return open
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.4 18.4 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+function toggleSenha(id, btn){
+  const input = document.getElementById(id);
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  btn.innerHTML = eyeIconSVG(!showing);
+  btn.setAttribute('aria-label', !showing ? 'Ocultar senha' : 'Mostrar senha');
+}
+
 function renderLogin(){
   const view = $('#view');
 
-  // Caso 1: sem sessão de conta nenhuma -> entrar ou criar conta
+  // Caso 0: veio de um link de recuperação de senha por e-mail
+  if(state.authMode === 'nova-senha'){
+    view.innerHTML = `
+      <h2 class="section-title">Defina uma nova senha</h2>
+      <p class="section-hint">Escolha uma nova senha para ${esc(state.authUser?.email||'sua conta')}.</p>
+      <form class="form-block" onsubmit="return definirNovaSenha(event)">
+        <div class="field"><label>Nova senha</label>${campoSenha('ns-senha','mínimo 6 caracteres')}</div>
+        <button class="btn" type="submit">Salvar nova senha</button>
+      </form>
+    `;
+    return;
+  }
+
+  // Caso 1: pediu para recuperar a senha
+  if(state.authMode === 'recuperar'){
+    view.innerHTML = `
+      <h2 class="section-title">Recuperar senha</h2>
+      <p class="section-hint">Informe o e-mail da sua conta. Vamos enviar um link para você criar uma nova senha.</p>
+      <form class="form-block" onsubmit="return recuperarSenha(event)">
+        <div class="field"><label>E-mail</label><input required type="email" id="rc-email" placeholder="voce@exemplo.com"></div>
+        <button class="btn" type="submit">Enviar link de recuperação</button>
+      </form>
+      <button class="linkbtn" onclick="state.authMode='entrar'; render();">Voltar para entrar</button>
+    `;
+    return;
+  }
+
+  // Caso 2: sem sessão de conta nenhuma -> entrar ou criar conta
   if(!state.authUser){
     view.innerHTML = `
       <h2 class="section-title">${state.authMode==='cadastro'?'Criar conta':'Entrar'}</h2>
       <p class="section-hint">Acesso com e-mail e senha reais (Supabase Auth). Só quem tiver uma conta cadastrada e liberada pelo administrador consegue ver ou alterar os dados.</p>
       <form class="form-block" onsubmit="return ${state.authMode==='cadastro'?'criarConta(event)':'entrar(event)'}">
         <div class="field"><label>E-mail</label><input required type="email" id="au-email" placeholder="voce@exemplo.com"></div>
-        <div class="field"><label>Senha</label><input required type="password" minlength="6" id="au-senha" placeholder="mínimo 6 caracteres"></div>
+        <div class="field"><label>Senha</label>${campoSenha('au-senha','mínimo 6 caracteres')}</div>
         <button class="btn" type="submit">${state.authMode==='cadastro'?'Criar conta':'Entrar'}</button>
       </form>
-      <button class="linkbtn" onclick="alternarModoAuth()">${state.authMode==='cadastro'?'Já tenho conta, quero entrar':'Ainda não tenho conta, quero me cadastrar'}</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <button class="linkbtn" onclick="alternarModoAuth()">${state.authMode==='cadastro'?'Já tenho conta, quero entrar':'Ainda não tenho conta, quero me cadastrar'}</button>
+        ${state.authMode!=='cadastro' ? `<button class="linkbtn" onclick="state.authMode='recuperar'; render();">Esqueceu a senha?</button>` : ''}
+      </div>
       <div class="notice">${state.authMode==='cadastro'
         ? 'Depois de criar a conta, o Supabase pode pedir confirmação por e-mail antes do primeiro acesso — confira sua caixa de entrada (e o spam).'
-        : 'Esqueceu a senha? Peça ao administrador para te ajudar a redefinir pelo painel do Supabase por enquanto.'}</div>
+        : 'Esqueceu a senha? Use o link acima — vamos te mandar um e-mail para redefinir.'}</div>
     `;
     return;
   }
 
-  // Caso 2: tem conta autenticada, mas ainda não completou o cadastro (nome) no app
+  // Caso 3: tem conta autenticada, mas ainda não completou o cadastro (nome) no app
   view.innerHTML = `
     <h2 class="section-title">Complete seu cadastro</h2>
     <p class="section-hint">Sua conta (${esc(state.authUser.email)}) está autenticada. Falta só o seu nome para aparecer nas listas de compra.</p>
@@ -493,6 +551,29 @@ async function entrar(e){
   render();
   return false;
 }
+async function recuperarSenha(e){
+  e.preventDefault();
+  const email = $('#rc-email').value.trim();
+  const {error} = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  if(error){ dbErr('recuperar senha', error); return false; }
+  toast('Se esse e-mail estiver cadastrado, o link de recuperação já foi enviado.');
+  state.authMode = 'entrar';
+  render();
+  return false;
+}
+async function definirNovaSenha(e){
+  e.preventDefault();
+  const senha = $('#ns-senha').value;
+  const {error} = await sb.auth.updateUser({password: senha});
+  if(error){ dbErr('definir nova senha', error); return false; }
+  toast('Senha atualizada com sucesso!');
+  state.authMode = 'entrar';
+  await checarPerfil();
+  render();
+  return false;
+}
 async function completarCadastro(e){
   e.preventDefault();
   const nome = $('#cc-nome').value.trim();
@@ -512,6 +593,13 @@ async function checarPerfil(){
   if(error){ dbErr('carregar perfil', error); return; }
   state.sessionUser = data ? mapUsuario(data) : null;
 }
+sb.auth.onAuthStateChange((event, session)=>{
+  if(event === 'PASSWORD_RECOVERY'){
+    state.authUser = session.user;
+    state.authMode = 'nova-senha';
+    render();
+  }
+});
 
 /* ---------------------------------------------------------
    Mercados
