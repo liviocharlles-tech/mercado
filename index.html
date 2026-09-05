@@ -261,6 +261,11 @@
   table.receipt-table td.qtd input{width:56px;padding:6px;border:1px solid var(--line);border-radius:8px;text-align:center;}
   table.receipt-table td.num{white-space:nowrap;font-weight:700;}
   table.receipt-table td .rm{background:var(--red-tint);border:none;color:var(--red);cursor:pointer;font-size:14px;padding:4px 8px;border-radius:999px;line-height:1;}
+  .pego-cell{width:28px;padding-right:0;}
+  .chk-pego{width:19px;height:19px;accent-color:var(--green);cursor:pointer;}
+  tr.item-pego td{opacity:0.45;}
+  tr.item-pego .title, tr.item-pego{text-decoration:none;}
+  tr.item-pego td:nth-child(2) > div > div{text-decoration:line-through;}
 
   .pill{
     display:inline-block;padding:3px 10px;border:1px solid var(--line);border-radius:999px;
@@ -390,7 +395,7 @@ async function loadAll(){
 function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
 function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade}; }
 function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco), imagemUrl:p.imagem_url}; }
-function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url}; }
+function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url, pego:!!it.pego}; }
 
 /* ---------------------------------------------------------
    Bootstrap / render loop
@@ -920,11 +925,15 @@ function renderCompra(view){
     </form>
 
     ${c.itens.length===0 ? `<div class="empty">A lista está vazia. Adicione o primeiro item acima.</div>` : `
+    <p class="section-hint" style="margin-bottom:6px">${c.itens.filter(i=>i.pego).length} de ${c.itens.length} já no carrinho</p>
     <table class="receipt-table">
-      <thead><tr><th>Item</th><th>Qtd</th><th>Subtotal</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Item</th><th>Qtd</th><th>Subtotal</th><th></th></tr></thead>
       <tbody>
         ${c.itens.map(it=>`
-          <tr>
+          <tr class="${it.pego?'item-pego':''}">
+            <td class="pego-cell">
+              <input type="checkbox" class="chk-pego" ${it.pego?'checked':''} onchange="togglePego('${it.id}', this.checked)" aria-label="Já peguei este item">
+            </td>
             <td>
               <div style="display:flex;align-items:center;gap:8px;">
                 ${it.imagemUrl
@@ -981,6 +990,12 @@ async function adicionarItem(e){
   await loadAll();
   render();
   return false;
+}
+async function togglePego(itemId, pego){
+  const {error} = await sb.from('feira_itens_compra').update({pego}).eq('id', itemId);
+  if(error){ dbErr('marcar item', error); return; }
+  await loadAll();
+  render();
 }
 async function mudarQtd(itemId, val){
   const q = parseFloat(val);
@@ -1099,6 +1114,8 @@ async function iniciarCamera(){
   const ctx = canvas.getContext('2d', {willReadFrequently:true});
   const inicioEscaneamento = Date.now();
   let avisoDado = false;
+  let ultimoCandidato = null;
+  let contagemCandidato = 0;
   function tick(){
     if(!qrStream) return; // câmera já foi parada
     if(video.readyState === video.HAVE_ENOUGH_DATA){
@@ -1108,11 +1125,19 @@ async function iniciarCamera(){
       const img = ctx.getImageData(0,0,canvas.width,canvas.height);
       let code = null;
       try{ code = jsQR(img.data, img.width, img.height); }catch(err){ code = null; }
-      // ignora os primeiros ~1.2s (câmera ainda ajustando foco/exposição, mais sujeita a "achar" ruído)
+      // ignora os primeiros ~1.5s (câmera ainda ajustando foco/exposição, mais sujeita a "achar" ruído)
       // e só aceita textos plausíveis de nota fiscal (link http ou uma chave de 44 dígitos)
       const tempoDecorrido = Date.now() - inicioEscaneamento;
       const pareceValido = code && (/^https?:\/\//i.test(code.data) || /\d{44}/.test(code.data));
-      if(code && tempoDecorrido > 1200 && pareceValido){
+      const candidatoValido = tempoDecorrido > 1500 && pareceValido ? code.data : null;
+      if(candidatoValido && candidatoValido === ultimoCandidato){
+        contagemCandidato++;
+      } else {
+        ultimoCandidato = candidatoValido;
+        contagemCandidato = candidatoValido ? 1 : 0;
+      }
+      // só aceita depois de ler o MESMO código em 2 frames seguidos — evita fechar por leitura passageira/falsa
+      if(candidatoValido && contagemCandidato >= 2){
         pararCamera();
         mostrarResultadoQR(code.data);
         return;
