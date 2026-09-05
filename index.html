@@ -192,6 +192,30 @@
     border-radius:8px;transition:color .15s ease, background .15s ease;
   }
   .pass-wrap .eye-btn:hover{color:var(--ink-soft);background:var(--surface-2);}
+
+  .img-preview{
+    width:64px;height:64px;object-fit:cover;border-radius:var(--radius-sm);
+    border:1px solid var(--line);cursor:pointer;flex-shrink:0;background:var(--surface-2);
+  }
+  .img-thumb{
+    width:44px;height:44px;object-fit:cover;border-radius:10px;
+    border:1px solid var(--line);cursor:pointer;flex-shrink:0;margin-right:10px;
+  }
+  .img-thumb-sm{width:32px;height:32px;margin-right:0;border-radius:8px;}
+  .img-thumb-empty{
+    display:flex;align-items:center;justify-content:center;background:var(--surface-2);
+    font-size:18px;cursor:default;
+  }
+  .card .row-top{align-items:center;}
+  .lightbox-overlay{
+    position:fixed;inset:0;background:rgba(15,17,13,0.85);
+    display:flex;align-items:center;justify-content:center;
+    z-index:100;padding:24px;cursor:zoom-out;
+  }
+  .lightbox-overlay img{
+    max-width:92vw;max-height:85vh;border-radius:var(--radius);
+    box-shadow:var(--shadow-lg);
+  }
   .btn{
     display:inline-block;padding:11px 18px;background:var(--green);color:#fff;
     border:none;border-radius:999px;cursor:pointer;font-family:'Manrope';font-weight:800;font-size:13.5px;
@@ -365,8 +389,8 @@ async function loadAll(){
 }
 function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
 function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade}; }
-function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco)}; }
-function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por}; }
+function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco), imagemUrl:p.imagem_url}; }
+function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url}; }
 
 /* ---------------------------------------------------------
    Bootstrap / render loop
@@ -679,7 +703,7 @@ function renderProdutos(view){
   const ed = state.editing.produto;
   view.innerHTML = `
     <h2 class="section-title">Produtos</h2>
-    <p class="section-hint">Nome, categoria, unidade de medida e preço atual. Qualquer usuário cadastrado pode inserir, editar ou excluir.</p>
+    <p class="section-hint">Nome, categoria, unidade de medida, preço atual e uma foto (opcional). Qualquer usuário cadastrado pode inserir, editar ou excluir.</p>
     <form class="form-block" onsubmit="return salvarProduto(event)">
       <div class="field"><label>Nome do produto</label><input required id="pr-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Arroz branco"></div>
       <div class="field-row">
@@ -691,6 +715,23 @@ function renderProdutos(view){
         </div>
       </div>
       <div class="field"><label>Preço atual (R$)</label><input required type="number" step="0.01" min="0" id="pr-preco" value="${ed?ed.preco:''}" placeholder="Ex.: 24.90"></div>
+      <div class="field">
+        <label>Imagem do produto</label>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <img id="pr-imagem-preview" src="${ed&&ed.imagemUrl?esc(ed.imagemUrl):''}" class="img-preview" style="${ed&&ed.imagemUrl?'':'display:none'}" onclick="if(this.getAttribute('src')) abrirImagem(this.getAttribute('src'))">
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+            <input type="url" id="pr-imagem-url" value="${ed&&ed.imagemUrl?esc(ed.imagemUrl):''}" placeholder="Cole aqui o link de uma imagem" oninput="atualizarPreviewImagem(this.value)">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn secondary" style="cursor:pointer;font-size:12px;padding:8px 12px;margin:0;">
+                📷 Enviar foto
+                <input type="file" accept="image/*" id="pr-imagem-file" style="display:none" onchange="onSelecionarImagemProduto(event)">
+              </label>
+              <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px" onclick="buscarImagemGoogle()">🔍 Procurar imagem</button>
+            </div>
+            <span id="pr-imagem-status" class="section-hint" style="margin:0;font-size:11.5px"></span>
+          </div>
+        </div>
+      </div>
       <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar produto'}</button>
       ${ed?`<button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoProduto()">Cancelar</button>`:''}
     </form>
@@ -704,7 +745,10 @@ function renderProdutos(view){
     box.innerHTML = ordenados.map(p=>`
       <div class="card">
         <div class="row-top">
-          <div>
+          ${p.imagemUrl
+            ? `<img src="${esc(p.imagemUrl)}" class="img-thumb" onclick="abrirImagem('${esc(p.imagemUrl)}')">`
+            : `<div class="img-thumb img-thumb-empty">🛒</div>`}
+          <div style="flex:1">
             <div class="title">${esc(p.nome)}</div>
             <div class="meta">${esc(p.categoria)} · por ${esc(p.unidade)}</div>
           </div>
@@ -718,6 +762,32 @@ function renderProdutos(view){
     `).join('');
   }
 }
+function atualizarPreviewImagem(url){
+  const img = $('#pr-imagem-preview');
+  if(!img) return;
+  if(url){ img.src = url; img.style.display='block'; }
+  else { img.removeAttribute('src'); img.style.display='none'; }
+}
+async function onSelecionarImagemProduto(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const status = $('#pr-imagem-status');
+  status.textContent = 'Enviando...';
+  const ext = (file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+  const path = `produtos/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error} = await sb.storage.from('produtos').upload(path, file, {upsert:true, contentType:file.type});
+  if(error){ status.textContent=''; dbErr('enviar imagem', error); return; }
+  const {data} = sb.storage.from('produtos').getPublicUrl(path);
+  $('#pr-imagem-url').value = data.publicUrl;
+  atualizarPreviewImagem(data.publicUrl);
+  status.textContent = 'Foto enviada ✓';
+}
+function buscarImagemGoogle(){
+  const nome = $('#pr-nome').value.trim();
+  if(!nome){ toast('Digite o nome do produto primeiro.'); return; }
+  window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(nome), '_blank', 'noopener');
+  toast('Encontrou a imagem certa? Clique nela com o botão direito → "Copiar endereço da imagem" e cole no campo de link.');
+}
 async function salvarProduto(e){
   e.preventDefault();
   const nome = $('#pr-nome').value.trim();
@@ -725,12 +795,13 @@ async function salvarProduto(e){
   if(!nome || isNaN(preco)) return false;
   const categoria = $('#pr-categoria').value;
   const unidade = $('#pr-unidade').value;
+  const imagem_url = $('#pr-imagem-url').value.trim() || null;
   if(state.editing.produto){
-    const {error} = await sb.from('feira_produtos').update({nome,categoria,unidade,preco,atualizado_em:new Date().toISOString()}).eq('id', state.editing.produto.id);
+    const {error} = await sb.from('feira_produtos').update({nome,categoria,unidade,preco,imagem_url,atualizado_em:new Date().toISOString()}).eq('id', state.editing.produto.id);
     if(error){ dbErr('salvar produto', error); return false; }
     state.editing.produto = null;
   } else {
-    const {error} = await sb.from('feira_produtos').insert({nome,categoria,unidade,preco});
+    const {error} = await sb.from('feira_produtos').insert({nome,categoria,unidade,preco,imagem_url});
     if(error){ dbErr('cadastrar produto', error); return false; }
   }
   await loadAll();
@@ -854,7 +925,16 @@ function renderCompra(view){
       <tbody>
         ${c.itens.map(it=>`
           <tr>
-            <td>${esc(it.nome)}<br><span class="meta" style="font-size:10.5px">${it.precoUnit?fmtBRL(it.precoUnit):''}/${esc(it.unidade)} · add. ${esc(it.adicionadoPor||'—')}</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px;">
+                ${it.imagemUrl
+                  ? `<img src="${esc(it.imagemUrl)}" class="img-thumb img-thumb-sm" onclick="abrirImagem('${esc(it.imagemUrl)}')">`
+                  : `<div class="img-thumb img-thumb-sm img-thumb-empty">🛒</div>`}
+                <div>
+                  ${esc(it.nome)}<br><span class="meta" style="font-size:10.5px">${it.precoUnit?fmtBRL(it.precoUnit):''}/${esc(it.unidade)} · add. ${esc(it.adicionadoPor||'—')}</span>
+                </div>
+              </div>
+            </td>
             <td class="qtd"><input type="number" min="0.01" step="0.01" value="${it.quantidade}" onchange="mudarQtd('${it.id}', this.value)"></td>
             <td class="num">${fmtBRL(it.precoUnit*it.quantidade)}</td>
             <td><button class="rm" title="Remover" onclick="removerItem('${it.id}')">✕</button></td>
@@ -895,7 +975,7 @@ async function adicionarItem(e){
   if(!p || !qtd || qtd<=0) return false;
   const {error} = await sb.from('feira_itens_compra').insert({
     compra_id: state.compraAtual.id, produto_id:p.id, nome:p.nome, unidade:p.unidade,
-    preco_unit:p.preco, quantidade:qtd, adicionado_por: state.sessionUser.nome
+    preco_unit:p.preco, quantidade:qtd, adicionado_por: state.sessionUser.nome, imagem_url: p.imagemUrl || null
   });
   if(error){ dbErr('adicionar item', error); return false; }
   await loadAll();
@@ -1052,6 +1132,15 @@ function mostrarResultadoQR(texto){
       ${/^https?:\/\//.test(texto) ? `<a href="${esc(texto)}" target="_blank" rel="noopener">Abrir nota em nova aba →</a>` : ''}
     </div>
   `;
+}
+
+function abrirImagem(url){
+  if(!url) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'lightbox-overlay';
+  overlay.innerHTML = `<img src="${esc(url)}">`;
+  overlay.onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
 }
 
 /* ---------------------------------------------------------
