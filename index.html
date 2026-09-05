@@ -422,7 +422,7 @@ async function loadAll(){
         id:c.id, mercadoId:c.mercado_id, mercadoNome:(c.feira_mercados&&c.feira_mercados.nome)||'—',
         mercadoCor:(c.feira_mercados&&c.feira_mercados.cor)||null, mercadoImagem:(c.feira_mercados&&c.feira_mercados.imagem_url)||null,
         criadoEm:c.criado_em, finalizadaEm:c.finalizada_em, itens:mapped,
-        total: mapped.reduce((s,it)=>s+it.precoUnit*it.quantidade,0)
+        total: mapped.reduce((s,it)=>s+(it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)*it.quantidade,0)
       };
     }));
   }
@@ -1103,7 +1103,7 @@ function totalParcialCompra(c){
 }
 function totalCompra(c){
   if(!c) return 0;
-  return c.itens.reduce((s,it)=>s+valorItem(it),0);
+  return c.itens.filter(it=>it.pego).reduce((s,it)=>s + (it.precoReal!==null ? it.precoReal : it.precoUnit) * it.quantidade, 0);
 }
 
 function renderCompra(view){
@@ -1209,8 +1209,8 @@ function renderCompra(view){
 
     <div class="total-strip">
       <div>
-        <div class="lbl">Total da lista · ${c.itens.length} ${c.itens.length===1?'item':'itens'}</div>
-        <div class="lbl" style="opacity:0.85">Valor parcial: ${fmtBRL(totalParcialCompra(c))}</div>
+        <div class="lbl">Total já confirmado · ${c.itens.filter(i=>i.pego).length} de ${c.itens.length} itens</div>
+        <div class="lbl" style="opacity:0.85">Valor parcial previsto (tudo): ${fmtBRL(totalParcialCompra(c))}</div>
       </div>
       <div class="val">${fmtBRL(total)}</div>
     </div>
