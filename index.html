@@ -413,6 +413,7 @@ async function init(){
     const editando = ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName) && document.getElementById('app').contains(ae);
     if(editando) return; // não atualiza a tela enquanto alguém está digitando, para não apagar o que foi escrito
     if(!state.authUser) return;
+    if(state.tab === 'qr') return; // não redesenha a aba de QR: apagaria o resultado lido e cortaria a câmera aberta
     await loadAll();
     render(true);
   }, 4000);
@@ -437,7 +438,11 @@ function render(silent){
   }
 }
 
-function setTab(t){ state.tab = t; render(); }
+function setTab(t){
+  if(state.tab === 'qr' && t !== 'qr') pararCamera();
+  state.tab = t;
+  render();
+}
 
 /* ---------------------------------------------------------
    Login (Supabase Auth: e-mail + senha)
