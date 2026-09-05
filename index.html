@@ -380,7 +380,7 @@ async function loadAll(){
     state.compraAtual = null;
   }
 
-  const hist = await sb.from('feira_compras').select('*, feira_mercados(nome)').eq('status','finalizada').order('finalizada_em',{ascending:false}).limit(50);
+  const hist = await sb.from('feira_compras').select('*, feira_mercados(nome,cor,imagem_url)').eq('status','finalizada').order('finalizada_em',{ascending:false}).limit(50);
   if(hist.error){ dbErr('histórico', hist.error); state.historico = []; }
   else {
     state.historico = await Promise.all(hist.data.map(async c=>{
@@ -388,6 +388,7 @@ async function loadAll(){
       const mapped = (itens.data||[]).map(mapItem);
       return {
         id:c.id, mercadoId:c.mercado_id, mercadoNome:(c.feira_mercados&&c.feira_mercados.nome)||'—',
+        mercadoCor:(c.feira_mercados&&c.feira_mercados.cor)||null, mercadoImagem:(c.feira_mercados&&c.feira_mercados.imagem_url)||null,
         criadoEm:c.criado_em, finalizadaEm:c.finalizada_em, itens:mapped,
         total: mapped.reduce((s,it)=>s+it.precoUnit*it.quantidade,0)
       };
@@ -395,7 +396,7 @@ async function loadAll(){
   }
 }
 function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
-function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade}; }
+function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade, imagemUrl:m.imagem_url, cor:m.cor}; }
 function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco), imagemUrl:p.imagem_url}; }
 function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url, pego:!!it.pego}; }
 
@@ -642,17 +643,44 @@ sb.auth.onAuthStateChange((event, session)=>{
 --------------------------------------------------------- */
 function renderMercados(view){
   const ed = state.editing.mercado;
+  const corAtual = ed && ed.cor ? ed.cor : '#1F6B45';
   view.innerHTML = `
     <h2 class="section-title">Supermercados da região</h2>
     <p class="section-hint">Cadastre os mercados onde vocês costumam comprar, na Região Metropolitana do Recife.</p>
     <form class="form-block" onsubmit="return salvarMercado(event)">
       <div class="field"><label>Nome do mercado</label><input required id="mc-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Bompreço Shopping Recife"></div>
+      <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px;margin-bottom:10px" onclick="buscarMercadoInternet()">🔍 Buscar mercado na internet</button>
+      <span id="mc-busca-status" class="section-hint" style="display:block;margin:-4px 0 10px"></span>
       <div class="field-row">
         <div class="field"><label>Bairro</label><input id="mc-bairro" value="${ed?esc(ed.bairro||''):''}" placeholder="Ex.: Boa Viagem"></div>
         <div class="field"><label>Cidade</label>
           <select id="mc-cidade">
             ${CIDADES_RMR.map(c=>`<option ${ed&&ed.cidade===c?'selected':''}>${c}</option>`).join('')}
           </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Logo / imagem do mercado</label>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <img id="mc-imagem-preview" src="${ed&&ed.imagemUrl?esc(ed.imagemUrl):''}" class="img-preview" style="${ed&&ed.imagemUrl?'':'display:none'}" onclick="if(this.getAttribute('src')) abrirImagem(this.getAttribute('src'))">
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+            <input type="url" id="mc-imagem-url" value="${ed&&ed.imagemUrl?esc(ed.imagemUrl):''}" placeholder="Cole aqui o link de uma imagem" oninput="atualizarPreviewImagemMercado(this.value)">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label class="btn secondary" style="cursor:pointer;font-size:12px;padding:8px 12px;margin:0;">
+                📷 Enviar foto
+                <input type="file" accept="image/*" id="mc-imagem-file" style="display:none" onchange="onSelecionarImagemMercado(event)">
+              </label>
+              <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px" onclick="buscarImagemGoogleMercado()">🔍 Procurar logo</button>
+            </div>
+            <span id="mc-imagem-status" class="section-hint" style="margin:0;font-size:11.5px"></span>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Cor do mercado</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="color" id="mc-cor" value="${corAtual}" style="width:52px;height:38px;padding:2px;border:1px solid var(--line);border-radius:8px;cursor:pointer;">
+          <span class="section-hint" id="mc-cor-hint" style="margin:0">Extraída automaticamente da imagem — ajuste se quiser.</span>
         </div>
       </div>
       <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar mercado'}</button>
@@ -665,9 +693,12 @@ function renderMercados(view){
     box.innerHTML = `<div class="empty">Nenhum mercado cadastrado ainda.</div>`;
   } else {
     box.innerHTML = state.mercados.map(m=>`
-      <div class="card">
+      <div class="card" style="border-left:4px solid ${esc(m.cor||'var(--line)')};">
         <div class="row-top">
-          <div>
+          ${m.imagemUrl
+            ? `<img src="${esc(m.imagemUrl)}" class="img-thumb" onclick="abrirImagem('${esc(m.imagemUrl)}')">`
+            : `<div class="img-thumb img-thumb-empty" style="background:${esc(m.cor||'var(--surface-2)')}22;">🏬</div>`}
+          <div style="flex:1">
             <div class="title">${esc(m.nome)}</div>
             <div class="meta">${esc(m.bairro||'—')} · ${esc(m.cidade)}</div>
           </div>
@@ -680,18 +711,125 @@ function renderMercados(view){
     `).join('');
   }
 }
+function normalizarTexto(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+async function buscarMercadoInternet(){
+  const nome = $('#mc-nome').value.trim();
+  const status = $('#mc-busca-status');
+  if(!nome){ toast('Digite o nome do mercado primeiro.'); return; }
+  status.textContent = 'Buscando endereço e logo...';
+
+  let achouEndereco = false, achouLogo = false;
+
+  // 1) Endereço via Nominatim (OpenStreetMap) — gratuito, sem chave
+  try{
+    const q = encodeURIComponent(nome + ', Pernambuco, Brasil');
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=br&limit=1&q=${q}`);
+    const arr = await r.json();
+    if(arr && arr[0]){
+      const addr = arr[0].address || {};
+      const bairro = addr.suburb || addr.neighbourhood || addr.city_district || addr.quarter || '';
+      const cidadeBruta = addr.city || addr.town || addr.municipality || '';
+      if(bairro) $('#mc-bairro').value = bairro;
+      const match = CIDADES_RMR.find(c => normalizarTexto(c) === normalizarTexto(cidadeBruta));
+      if(match) $('#mc-cidade').value = match;
+      achouEndereco = !!(bairro || match);
+    }
+  }catch(err){ /* segue sem endereço */ }
+
+  // 2) Logo via Wikipédia (quando o mercado/rede tiver página) — gratuito, sem chave
+  try{
+    const t = encodeURIComponent(nome);
+    const r = await fetch(`https://pt.wikipedia.org/w/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=original&titles=${t}`);
+    const data = await r.json();
+    const pages = data.query && data.query.pages;
+    const pagina = pages && Object.values(pages)[0];
+    const imgUrl = pagina && pagina.original && pagina.original.source;
+    if(imgUrl){
+      $('#mc-imagem-url').value = imgUrl;
+      atualizarPreviewImagemMercado(imgUrl);
+      achouLogo = true;
+    }
+  }catch(err){ /* segue sem logo */ }
+
+  if(achouEndereco && achouLogo) status.textContent = 'Endereço e logo encontrados — confira antes de salvar.';
+  else if(achouEndereco) status.textContent = 'Endereço encontrado. Logo não encontrada — tente "Procurar logo" ou envie uma foto.';
+  else if(achouLogo) status.textContent = 'Logo encontrada. Endereço não encontrado — preencha bairro/cidade manualmente.';
+  else status.textContent = 'Não encontrei nada automaticamente — preencha manualmente ou tente "Procurar logo".';
+}
+function atualizarPreviewImagemMercado(url){
+  const img = $('#mc-imagem-preview');
+  if(!img) return;
+  if(url){ img.src = url; img.style.display='block'; extrairCorDominante(url); }
+  else { img.removeAttribute('src'); img.style.display='none'; }
+}
+async function onSelecionarImagemMercado(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const status = $('#mc-imagem-status');
+  status.textContent = 'Enviando...';
+  const ext = (file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+  const path = `mercados/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error} = await sb.storage.from('produtos').upload(path, file, {upsert:true, contentType:file.type});
+  if(error){ status.textContent=''; dbErr('enviar imagem', error); return; }
+  const {data} = sb.storage.from('produtos').getPublicUrl(path);
+  $('#mc-imagem-url').value = data.publicUrl;
+  atualizarPreviewImagemMercado(data.publicUrl);
+  status.textContent = 'Foto enviada ✓';
+}
+function buscarImagemGoogleMercado(){
+  const nome = $('#mc-nome').value.trim();
+  if(!nome){ toast('Digite o nome do mercado primeiro.'); return; }
+  window.open('https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(nome + ' logo'), '_blank', 'noopener');
+  toast('Achou a logo certa? Toque e segure nela → "Baixar imagem" e depois use "Enviar foto" aqui no app.');
+}
+function extrairCorDominante(url){
+  const hint = $('#mc-cor-hint');
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try{
+      const c = document.createElement('canvas');
+      const w = c.width = 32, h = c.height = 32;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0,0,w,h).data;
+      let r=0,g=0,b=0,n=0;
+      for(let i=0;i<data.length;i+=4){
+        const rr=data[i], gg=data[i+1], bb=data[i+2], aa=data[i+3];
+        // ignora pixels quase transparentes, quase brancos ou quase pretos (fundo, não a "cor" da marca)
+        if(aa<128) continue;
+        const lum = (rr+gg+bb)/3;
+        if(lum>235 || lum<20) continue;
+        r+=rr; g+=gg; b+=bb; n++;
+      }
+      if(n===0){ if(hint) hint.textContent='Não consegui identificar uma cor — escolha manualmente.'; return; }
+      const hex = '#' + [r/n,g/n,b/n].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+      const corInput = $('#mc-cor');
+      if(corInput) corInput.value = hex;
+      if(hint) hint.textContent = 'Cor extraída automaticamente da imagem — ajuste se quiser.';
+    }catch(err){
+      if(hint) hint.textContent = 'Não deu para ler as cores dessa imagem (restrição do site de origem) — escolha manualmente.';
+    }
+  };
+  img.onerror = () => { if(hint) hint.textContent='Não consegui carregar essa imagem para ler a cor.'; };
+  img.src = url;
+}
 async function salvarMercado(e){
   e.preventDefault();
   const nome = $('#mc-nome').value.trim();
   if(!nome) return false;
   const bairro = $('#mc-bairro').value.trim();
   const cidade = $('#mc-cidade').value;
+  const imagem_url = $('#mc-imagem-url').value.trim() || null;
+  const cor = $('#mc-cor').value || null;
   if(state.editing.mercado){
-    const {error} = await sb.from('feira_mercados').update({nome,bairro,cidade}).eq('id', state.editing.mercado.id);
+    const {error} = await sb.from('feira_mercados').update({nome,bairro,cidade,imagem_url,cor}).eq('id', state.editing.mercado.id);
     if(error){ dbErr('salvar mercado', error); return false; }
     state.editing.mercado = null;
   } else {
-    const {error} = await sb.from('feira_mercados').insert({nome,bairro,cidade});
+    const {error} = await sb.from('feira_mercados').insert({nome,bairro,cidade,imagem_url,cor});
     if(error){ dbErr('cadastrar mercado', error); return false; }
   }
   await loadAll();
@@ -912,7 +1050,12 @@ function renderCompra(view){
   const produtosDisponiveis = state.produtos;
 
   view.innerHTML = `
-    <h2 class="section-title">${mercado?esc(mercado.nome):'Mercado removido'}</h2>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;border-left:4px solid ${esc(mercado&&mercado.cor||'var(--green)')};padding-left:12px;">
+      ${mercado&&mercado.imagemUrl
+        ? `<img src="${esc(mercado.imagemUrl)}" class="img-thumb" style="width:52px;height:52px;margin-right:0;" onclick="abrirImagem('${esc(mercado.imagemUrl)}')">`
+        : ''}
+      <h2 class="section-title" style="margin:0">${mercado?esc(mercado.nome):'Mercado removido'}</h2>
+    </div>
     <p class="section-hint">Lista em aberto · iniciada em ${new Date(c.criadoEm).toLocaleString('pt-BR')}. Atualiza sozinha a cada poucos segundos para todo mundo.</p>
 
     <form class="form-block" onsubmit="return adicionarItem(event)" style="display:flex;flex-direction:column;">
@@ -1049,9 +1192,12 @@ function renderHistorico(view){
     return;
   }
   box.innerHTML = state.historico.map(c=>`
-    <div class="card">
+    <div class="card" style="border-left:4px solid ${esc(c.mercadoCor||'var(--line)')};">
       <div class="row-top">
-        <div>
+        ${c.mercadoImagem
+          ? `<img src="${esc(c.mercadoImagem)}" class="img-thumb" onclick="abrirImagem('${esc(c.mercadoImagem)}')">`
+          : ''}
+        <div style="flex:1">
           <div class="title">${esc(c.mercadoNome)}</div>
           <div class="meta">${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')} · ${c.itens.length} itens</div>
         </div>
