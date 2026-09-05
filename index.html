@@ -158,6 +158,11 @@
     position:sticky;top:0;z-index:1;
   }
   .picker-search:focus{outline:none;background:#fff;}
+  .presenca-bar{
+    background:var(--green-tint);color:var(--green-dark);
+    border-radius:999px;padding:6px 14px;font-size:12px;
+    display:inline-block;margin-bottom:14px;
+  }
 
   h2.section-title{
     font-size:17px;margin:0 0 4px;color:var(--ink);
@@ -404,9 +409,14 @@ async function loadAll(){
   else if(compraAberta.data.length){
     const c = compraAberta.data[0];
     const itens = await sb.from('feira_itens_compra').select('*').eq('compra_id', c.id).order('criado_em');
+    const pres = await sb.from('feira_presenca').select('*').eq('compra_id', c.id);
+    const agora = Date.now();
+    const presencas = (pres.data||[])
+      .filter(p => agora - new Date(p.atualizado_em).getTime() < 20000) // considera "ativo agora" nos últimos 20s
+      .map(p => ({usuarioId:p.usuario_id, nome:p.nome}));
     state.compraAtual = {
       id:c.id, mercadoId:c.mercado_id, criadoEm:c.criado_em, status:c.status,
-      itens: (itens.data||[]).map(mapItem)
+      itens: (itens.data||[]).map(mapItem), presencas
     };
   } else {
     state.compraAtual = null;
@@ -435,6 +445,20 @@ function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, u
 /* ---------------------------------------------------------
    Bootstrap / render loop
 --------------------------------------------------------- */
+async function enviarPresenca(){
+  if(state.tab!=='compra' || !state.compraAtual || !state.sessionUser) return;
+  // atualização otimista: já mostra a si mesmo na lista, sem esperar a resposta do banco
+  if(!state.compraAtual.presencas.some(p=>p.usuarioId===state.sessionUser.id)){
+    state.compraAtual.presencas.push({usuarioId: state.sessionUser.id, nome: state.sessionUser.nome});
+  }
+  try{
+    await sb.from('feira_presenca').upsert({
+      usuario_id: state.sessionUser.id, compra_id: state.compraAtual.id,
+      nome: state.sessionUser.nome, atualizado_em: new Date().toISOString()
+    });
+  }catch(err){ /* silencioso — presença é um "nice to have", não trava o app */ }
+}
+
 async function init(){
   const {data} = await sb.auth.getSession();
   if(data.session){
@@ -442,12 +466,14 @@ async function init(){
     await loadAll();
     await checarPerfil();
   }
+  enviarPresenca();
   render();
   setInterval(async ()=>{
+    if(!state.authUser) return;
+    enviarPresenca(); // sinaliza "comprando agora" mesmo se a tela não for redesenhada neste ciclo
     const ae = document.activeElement;
     const editando = ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName) && document.getElementById('app').contains(ae);
     if(editando) return; // não atualiza a tela enquanto alguém está digitando, para não apagar o que foi escrito
-    if(!state.authUser) return;
     if(state.tab === 'qr') return; // não redesenha a aba de QR: apagaria o resultado lido e cortaria a câmera aberta
     if(temSubtelaAberta()) return; // não redesenha enquanto um formulário (produto, mercado, importação) está aberto
     const algumaListaAberta = Array.from(document.querySelectorAll('.picker-list')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
@@ -500,6 +526,7 @@ function renderBackBar(){
 function setTab(t){
   if(state.tab === 'qr' && t !== 'qr') pararCamera();
   state.tab = t;
+  enviarPresenca();
   render();
 }
 
@@ -1094,6 +1121,14 @@ async function excluirUsuario(id){
 /* ---------------------------------------------------------
    Compra atual (lista online compartilhada)
 --------------------------------------------------------- */
+function renderPresencaHTML(presencas){
+  if(!presencas || presencas.length===0) return '';
+  const nomes = presencas.map(p => p.usuarioId===state.sessionUser.id ? 'Você' : p.nome);
+  // "Você" primeiro, se estiver na lista
+  nomes.sort((a,b)=> a==='Você' ? -1 : b==='Você' ? 1 : 0);
+  return `<div class="presenca-bar">🟢 Comprando agora: <b>${nomes.map(esc).join(', ')}</b></div>`;
+}
+
 function valorItem(it){
   return (it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit) * it.quantidade;
 }
@@ -1147,6 +1182,7 @@ function renderCompra(view){
       <h2 class="section-title" style="margin:0">${mercado?esc(mercado.nome):'Mercado removido'}</h2>
     </div>
     <p class="section-hint">Lista em aberto · iniciada em ${new Date(c.criadoEm).toLocaleString('pt-BR')}. Atualiza sozinha a cada poucos segundos para todo mundo.</p>
+    ${renderPresencaHTML(c.presencas)}
 
     <form class="form-block" onsubmit="return adicionarItem(event)" style="display:flex;flex-direction:column;">
       <div class="field"><label>Produto</label>
@@ -1232,7 +1268,7 @@ function togglePickerMercado(){
   list.style.display = abrindo ? 'block' : 'none';
   if(abrindo){
     const busca = list.querySelector('.picker-search');
-    if(busca){ busca.value=''; filtrarPickerMercado(''); setTimeout(()=>busca.focus(), 50); }
+    if(busca){ busca.value=''; filtrarPickerMercado(''); }
   }
 }
 function filtrarPickerMercado(texto){
@@ -1254,7 +1290,7 @@ function togglePickerProduto(){
   list.style.display = abrindo ? 'block' : 'none';
   if(abrindo){
     const busca = list.querySelector('.picker-search');
-    if(busca){ busca.value=''; filtrarPickerProduto(''); setTimeout(()=>busca.focus(), 50); }
+    if(busca){ busca.value=''; filtrarPickerProduto(''); }
   }
 }
 function filtrarPickerProduto(texto){
@@ -1282,6 +1318,7 @@ async function iniciarCompra(e){
   const {error} = await sb.from('feira_compras').insert({mercado_id: mercadoId, status:'aberta'});
   if(error){ dbErr('iniciar compra', error); return false; }
   await loadAll();
+  enviarPresenca();
   render();
   return false;
 }
