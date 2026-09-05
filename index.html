@@ -1052,7 +1052,7 @@ function renderQR(view){
     <div class="qr-box">
       <button class="btn" onclick="iniciarCamera()">Usar câmera</button>
       <input type="file" accept="image/*" id="qr-file" style="margin-top:10px" onchange="lerArquivoQR(event)">
-      <div><video id="qr-video" playsinline style="display:none"></video></div>
+      <div><video id="qr-video" playsinline muted autoplay style="display:none"></video></div>
       <canvas id="qr-canvas" style="display:none"></canvas>
     </div>
 
@@ -1065,6 +1065,10 @@ function renderQR(view){
 }
 
 async function iniciarCamera(){
+  if(!window.jsQR){
+    toast('O leitor de QR Code não carregou (falha ao baixar a biblioteca). Verifique sua internet e recarregue a página.');
+    return;
+  }
   const video = $('#qr-video');
   try{
     qrStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
@@ -1074,21 +1078,28 @@ async function iniciarCamera(){
   }
   video.srcObject = qrStream;
   video.style.display = 'block';
-  await video.play();
+  try{ await video.play(); }catch(e){ /* alguns navegadores já tocam sozinhos */ }
   const canvas = $('#qr-canvas');
   const ctx = canvas.getContext('2d', {willReadFrequently:true});
+  const inicioEscaneamento = Date.now();
+  let avisoDado = false;
   function tick(){
+    if(!qrStream) return; // câmera já foi parada
     if(video.readyState === video.HAVE_ENOUGH_DATA){
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code = window.jsQR ? jsQR(img.data, img.width, img.height) : null;
+      const code = jsQR(img.data, img.width, img.height);
       if(code){
         pararCamera();
         mostrarResultadoQR(code.data);
         return;
       }
+    }
+    if(!avisoDado && Date.now()-inicioEscaneamento > 9000){
+      avisoDado = true;
+      toast('Ainda não encontrei o QR Code — aproxime mais, melhore a luz ou tente enviar uma foto em vez da câmera.');
     }
     qrLoopId = requestAnimationFrame(tick);
   }
@@ -1102,20 +1113,26 @@ function pararCamera(){
   if(video) video.style.display='none';
 }
 function lerArquivoQR(e){
+  if(!window.jsQR){
+    toast('O leitor de QR Code não carregou (falha ao baixar a biblioteca). Verifique sua internet e recarregue a página.');
+    return;
+  }
   const file = e.target.files[0];
   if(!file) return;
   const img = new Image();
   const reader = new FileReader();
+  reader.onerror = () => toast('Não foi possível abrir esse arquivo.');
   reader.onload = ev => {
+    img.onerror = () => toast('Não consegui abrir essa imagem — se for uma foto de iPhone em formato HEIC, tente exportar como JPG/PNG antes, ou use "Usar câmera".');
     img.onload = () => {
       const canvas = $('#qr-canvas');
       canvas.width = img.width; canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img,0,0);
       const data = ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code = window.jsQR ? jsQR(data.data, data.width, data.height) : null;
+      const code = jsQR(data.data, data.width, data.height);
       if(code) mostrarResultadoQR(code.data);
-      else toast('Não foi possível ler um QR Code nessa imagem.');
+      else toast('Não foi possível ler um QR Code nessa imagem. Tente recortar a foto deixando só o QR Code, com boa luz e foco.');
     };
     img.src = ev.target.result;
   };
