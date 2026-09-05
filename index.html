@@ -1050,7 +1050,8 @@ function renderQR(view){
     <p class="section-hint">Aponte a câmera para o QR Code da nota (NFC-e) ou envie uma foto. O código traz o link e a chave de acesso da nota na Sefaz.</p>
 
     <div class="qr-box">
-      <button class="btn" onclick="iniciarCamera()">Usar câmera</button>
+      <button class="btn" id="qr-btn-camera" onclick="iniciarCamera()">Usar câmera</button>
+      <button class="btn secondary" id="qr-btn-parar" style="display:none" onclick="pararCamera()">Cancelar leitura</button>
       <input type="file" accept="image/*" id="qr-file" style="margin-top:10px" onchange="lerArquivoQR(event)">
       <div><video id="qr-video" playsinline muted autoplay style="display:none"></video></div>
       <canvas id="qr-canvas" style="display:none"></canvas>
@@ -1079,6 +1080,9 @@ async function iniciarCamera(){
     const ok = await new Promise(res => garantirJsQR(res));
     if(!ok){ toast('Não consegui carregar o leitor de QR Code. Verifique sua internet e recarregue a página.'); return; }
   }
+  // se já havia uma câmera aberta, encerra antes de pedir uma nova (evita "câmera em uso")
+  pararCamera();
+
   const video = $('#qr-video');
   try{
     qrStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
@@ -1088,6 +1092,8 @@ async function iniciarCamera(){
   }
   video.srcObject = qrStream;
   video.style.display = 'block';
+  $('#qr-btn-camera').style.display = 'none';
+  $('#qr-btn-parar').style.display = 'inline-block';
   try{ await video.play(); }catch(e){ /* alguns navegadores já tocam sozinhos */ }
   const canvas = $('#qr-canvas');
   const ctx = canvas.getContext('2d', {willReadFrequently:true});
@@ -1100,8 +1106,13 @@ async function iniciarCamera(){
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code = jsQR(img.data, img.width, img.height);
-      if(code){
+      let code = null;
+      try{ code = jsQR(img.data, img.width, img.height); }catch(err){ code = null; }
+      // ignora os primeiros ~1.2s (câmera ainda ajustando foco/exposição, mais sujeita a "achar" ruído)
+      // e só aceita textos plausíveis de nota fiscal (link http ou uma chave de 44 dígitos)
+      const tempoDecorrido = Date.now() - inicioEscaneamento;
+      const pareceValido = code && (/^https?:\/\//i.test(code.data) || /\d{44}/.test(code.data));
+      if(code && tempoDecorrido > 1200 && pareceValido){
         pararCamera();
         mostrarResultadoQR(code.data);
         return;
@@ -1120,7 +1131,10 @@ function pararCamera(){
   if(qrStream) qrStream.getTracks().forEach(t=>t.stop());
   qrStream=null; qrLoopId=null;
   const video = $('#qr-video');
-  if(video) video.style.display='none';
+  if(video){ video.style.display='none'; video.srcObject=null; }
+  const btnCam = $('#qr-btn-camera'), btnParar = $('#qr-btn-parar');
+  if(btnCam) btnCam.style.display='inline-block';
+  if(btnParar) btnParar.style.display='none';
 }
 function lerArquivoQR(e){
   if(!window.jsQR){
