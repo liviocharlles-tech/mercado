@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Feira do Mês — Controle de Compras</title>
+
+<!-- PWA: instalar na tela inicial do celular -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2E4F35">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Feira do Mês">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --paper:#FAF6EC;
+    --paper-2:#F1EADA;
+    --ink:#23261F;
+    --ink-soft:#5B5C4F;
+    --green:#2E4F35;
+    --green-2:#3E6A47;
+    --mango:#D98A24;
+    --red:#AE3C34;
+    --line:#D5CBAE;
+    --line-strong:#B7A97E;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Manrope',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{max-width:560px;margin:0 auto;min-height:100vh;background:var(--paper);
+    border-left:1px solid var(--line);border-right:1px solid var(--line);
+    box-shadow:0 0 40px rgba(0,0,0,0.06);
+  }
+  .num{font-family:'Space Mono',monospace;}
+
+  header.receipt-head{
+    padding:22px 20px 16px;
+    border-bottom:2px dashed var(--line-strong);
+    position:relative;
+  }
+  header.receipt-head h1{
+    margin:0;
+    font-size:22px;
+    letter-spacing:0.2px;
+    font-weight:800;
+    color:var(--green);
+  }
+  header.receipt-head .sub{
+    margin-top:4px;
+    font-size:12.5px;
+    color:var(--ink-soft);
+  }
+  .userbar{
+    margin-top:14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .userbar .who{
+    font-size:13px;
+    font-family:'Space Mono',monospace;
+  }
+  .userbar .who b{color:var(--green);}
+  .userbar .who .tag{
+    display:inline-block;margin-left:6px;padding:1px 6px;
+    background:var(--mango);color:#fff;border-radius:2px;font-size:10px;
+    font-family:'Manrope';font-weight:700;
+  }
+  .linkbtn{
+    background:none;border:none;color:var(--ink-soft);
+    text-decoration:underline;cursor:pointer;font-size:12.5px;padding:0;
+    font-family:'Manrope';
+  }
+
+  nav#tabs{
+    display:flex;overflow-x:auto;border-bottom:1px solid var(--line);
+    background:var(--paper-2);
+  }
+  nav#tabs button{
+    flex:0 0 auto;
+    padding:12px 14px;
+    background:none;border:none;border-right:1px solid var(--line);
+    font-family:'Manrope';font-weight:600;font-size:12.5px;
+    color:var(--ink-soft);cursor:pointer;white-space:nowrap;
+  }
+  nav#tabs button.active{
+    color:var(--green);background:var(--paper);
+    box-shadow:inset 0 -2px 0 var(--green);
+  }
+
+  main#view{padding:18px 20px 60px;}
+
+  h2.section-title{
+    font-size:15px;margin:0 0 4px;color:var(--ink);
+    font-weight:800;
+  }
+  p.section-hint{
+    font-size:12.5px;color:var(--ink-soft);margin:0 0 16px;line-height:1.5;
+  }
+
+  .card{
+    border:1px solid var(--line);
+    background:#fff;
+    padding:14px 14px;
+    margin-bottom:10px;
+  }
+  .card .row-top{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+  }
+  .card .title{font-weight:700;font-size:14.5px;}
+  .card .meta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .card .price{font-family:'Space Mono';font-weight:700;color:var(--green);font-size:14.5px;white-space:nowrap;}
+  .card .actions{display:flex;gap:10px;margin-top:10px;}
+  .card .actions button{
+    font-size:11.5px;border:1px solid var(--line-strong);background:var(--paper);
+    padding:5px 9px;cursor:pointer;font-family:'Manrope';font-weight:600;color:var(--ink);
+  }
+  .card .actions button.danger{color:var(--red);border-color:var(--red);}
+  .card .actions button.primary{color:var(--green);border-color:var(--green);}
+
+  form.form-block{
+    border:1px dashed var(--line-strong);
+    padding:14px;margin-bottom:18px;background:var(--paper-2);
+  }
+  form.form-block .field{margin-bottom:10px;}
+  form.form-block label{
+    display:block;font-size:11px;text-transform:none;color:var(--ink-soft);
+    margin-bottom:4px;font-weight:600;
+  }
+  form.form-block input, form.form-block select{
+    width:100%;padding:9px 10px;border:1px solid var(--line-strong);
+    background:#fff;font-family:'Manrope';font-size:13.5px;color:var(--ink);
+  }
+  form.form-block .field-row{display:flex;gap:8px;}
+  form.form-block .field-row .field{flex:1;}
+  .btn{
+    display:inline-block;padding:9px 16px;background:var(--green);color:#fff;
+    border:none;cursor:pointer;font-family:'Manrope';font-weight:700;font-size:13px;
+  }
+  .btn:active{background:var(--green-2);}
+  .btn.secondary{background:var(--paper);color:var(--ink);border:1px solid var(--line-strong);}
+  .btn.warn{background:var(--red);}
+  .btn:disabled{opacity:0.45;cursor:not-allowed;}
+  .btn:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{
+    outline:2px solid var(--mango);outline-offset:2px;
+  }
+
+  .empty{
+    padding:26px 14px;text-align:center;color:var(--ink-soft);
+    border:1px dashed var(--line-strong);font-size:13px;
+  }
+
+  .total-strip{
+    position:sticky;bottom:0;left:0;right:0;
+    background:var(--green);color:#fff;
+    padding:14px 16px;margin:18px -20px -60px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .total-strip .lbl{font-size:12px;opacity:0.85;}
+  .total-strip .val{font-family:'Space Mono';font-size:22px;font-weight:700;}
+
+  table.receipt-table{width:100%;border-collapse:collapse;margin-top:8px;}
+  table.receipt-table th{
+    text-align:left;font-size:10.5px;color:var(--ink-soft);
+    border-bottom:1px solid var(--line-strong);padding:4px 4px 6px;font-weight:600;
+  }
+  table.receipt-table td{
+    font-size:12.5px;padding:8px 4px;border-bottom:1px dashed var(--line);
+    vertical-align:middle;
+  }
+  table.receipt-table td.qtd input{width:52px;padding:4px;font-family:'Space Mono';border:1px solid var(--line-strong);text-align:center;}
+  table.receipt-table td.num{font-family:'Space Mono';white-space:nowrap;}
+  table.receipt-table td .rm{background:none;border:none;color:var(--red);cursor:pointer;font-size:15px;padding:0 4px;}
+
+  .pill{
+    display:inline-block;padding:2px 8px;border:1px solid var(--line-strong);
+    font-size:10.5px;color:var(--ink-soft);margin-right:4px;
+  }
+
+  .qr-box{
+    border:2px dashed var(--line-strong);padding:16px;text-align:center;margin-bottom:14px;
+  }
+  video#qr-video{width:100%;max-width:400px;border:1px solid var(--ink);margin-top:10px;}
+  .qr-result{
+    border:1px solid var(--green);background:#fff;padding:12px;font-size:12.5px;
+    word-break:break-all;margin-top:10px;
+  }
+  .notice{
+    font-size:11.5px;color:var(--ink-soft);background:var(--paper-2);
+    border-left:3px solid var(--mango);padding:8px 10px;margin-top:8px;line-height:1.5;
+  }
+  .toast{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:9px 16px;font-size:12.5px;
+    z-index:50;max-width:90%;text-align:center;
+  }
+  .install-bar{
+    background:var(--mango);color:#fff;padding:9px 16px;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    font-size:12px;
+  }
+  .install-bar b{font-weight:800;}
+  .install-bar .btn{background:#fff;color:var(--ink);}
+  .install-bar .linkbtn{color:#fff;text-decoration:underline;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="receipt-head">
+    <h1>Feira do Mês</h1>
+    <div class="sub">Compras compartilhadas · Região Metropolitana do Recife</div>
+    <div class="userbar" id="userbar"></div>
+  </header>
+  <div id="install-bar" class="install-bar" style="display:none"></div>
+  <nav id="tabs"></nav>
+  <main id="view"></main>
+</div>
+
+<script>
+/* ---------------------------------------------------------
+   Utilidades
+--------------------------------------------------------- */
+const $ = sel => document.querySelector(sel);
+const fmtBRL = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg){
+  const t=document.createElement('div');t.className='toast';t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2200);
+}
+
+/* Conexão com o Supabase (projeto "liviocharlles-tech's Project", schema "feira") */
+const SUPABASE_URL = 'https://wzfstallegpihgihiefg.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_TcrH8oRXCNM3x_AMbK9MPA_p9Mt4nRn';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function dbErr(label, error){
+  console.error(label, error);
+  toast('Erro no banco (' + label + '): ' + (error?.message || 'falha desconhecida'));
+}
+
+const CATEGORIAS = ['Hortifruti','Açougue e Carnes','Laticínios e Frios','Padaria','Mercearia','Bebidas','Congelados','Limpeza','Higiene e Beleza','Pet','Outros'];
+const UNIDADES = ['kg','g','L','ml','un','dz','pct','cx'];
+const CIDADES_RMR = ['Recife','Olinda','Paulista','Jaboatão dos Guararapes','Camaragibe','São Lourenço da Mata','Cabo de Santo Agostinho','Igarassu','Abreu e Lima','Ipojuca','Moreno','Araçoiaba','Itapissuma','Itamaracá'];
+
+/* ---------------------------------------------------------
+   Estado
+--------------------------------------------------------- */
+let state = {
+  tab: 'compra',
+  usuarios: [],
+  mercados: [],
+  produtos: [],
+  compraAtual: null,   // {id, mercadoId, criadoEm, itens:[], status}
+  historico: [],
+  authUser: null,       // sessão do Supabase Auth (auth.users)
+  authMode: 'entrar',   // 'entrar' | 'cadastro'
+  sessionUser: null,    // linha correspondente em feira.usuarios
+  editing: {mercado:null, produto:null, usuario:null},
+};
+
+async function loadAll(){
+  const [u, m, p] = await Promise.all([
+    sb.from('feira_usuarios').select('*').order('criado_em'),
+    sb.from('feira_mercados').select('*').order('nome'),
+    sb.from('feira_produtos').select('*').order('nome'),
+  ]);
+  if(u.error) dbErr('usuarios', u.error); else state.usuarios = u.data.map(mapUsuario);
+  if(m.error) dbErr('mercados', m.error); else state.mercados = m.data.map(mapMercado);
+  if(p.error) dbErr('produtos', p.error); else state.produtos = p.data.map(mapProduto);
+
+  const compraAberta = await sb.from('feira_compras').select('*').eq('status','aberta').order('criado_em',{ascending:false}).limit(1);
+  if(compraAberta.error){ dbErr('compra atual', compraAberta.error); }
+  else if(compraAberta.data.length){
+    const c = compraAberta.data[0];
+    const itens = await sb.from('feira_itens_compra').select('*').eq('compra_id', c.id).order('criado_em');
+    state.compraAtual = {
+      id:c.id, mercadoId:c.mercado_id, criadoEm:c.criado_em, status:c.status,
+      itens: (itens.data||[]).map(mapItem)
+    };
+  } else {
+    state.compraAtual = null;
+  }
+
+  const hist = await sb.from('feira_compras').select('*, feira_mercados(nome)').eq('status','finalizada').order('finalizada_em',{ascending:false}).limit(50);
+  if(hist.error){ dbErr('histórico', hist.error); state.historico = []; }
+  else {
+    state.historico = await Promise.all(hist.data.map(async c=>{
+      const itens = await sb.from('feira_itens_compra').select('*').eq('compra_id', c.id);
+      const mapped = (itens.data||[]).map(mapItem);
+      return {
+        id:c.id, mercadoId:c.mercado_id, mercadoNome:(c.feira_mercados&&c.feira_mercados.nome)||'—',
+        criadoEm:c.criado_em, finalizadaEm:c.finalizada_em, itens:mapped,
+        total: mapped.reduce((s,it)=>s+it.precoUnit*it.quantidade,0)
+      };
+    }));
+  }
+}
+function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
+function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade}; }
+function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco)}; }
+function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por}; }
+
+/* ---------------------------------------------------------
+   Bootstrap / render loop
+--------------------------------------------------------- */
+async function init(){
+  const {data} = await sb.auth.getSession();
+  if(data.session){
+    state.authUser = data.session.user;
+    await loadAll();
+    await checarPerfil();
+  }
+  render();
+  setInterval(async ()=>{
+    const ae = document.activeElement;
+    const editando = ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName) && document.getElementById('app').contains(ae);
+    if(editando) return; // não atualiza a tela enquanto alguém está digitando, para não apagar o que foi escrito
+    if(!state.authUser) return;
+    await loadAll();
+    render(true);
+  }, 4000);
+}
+
+function render(silent){
+  renderUserbar();
+  renderTabs();
+  if(!state.sessionUser){
+    renderLogin();
+    return;
+  }
+  const view = $('#view');
+  switch(state.tab){
+    case 'compra': renderCompra(view); break;
+    case 'mercados': renderMercados(view); break;
+    case 'produtos': renderProdutos(view); break;
+    case 'usuarios': renderUsuarios(view); break;
+    case 'historico': renderHistorico(view); break;
+    case 'qr': renderQR(view); break;
+    default: renderCompra(view);
+  }
+}
+
+function setTab(t){ state.tab = t; render(); }
+
+/* ---------------------------------------------------------
+   Login (Supabase Auth: e-mail + senha)
+--------------------------------------------------------- */
+function renderUserbar(){
+  const bar = $('#userbar');
+  if(!state.sessionUser){ bar.innerHTML=''; return; }
+  bar.innerHTML = `
+    <div class="who">Olá, <b>${esc(state.sessionUser.nome)}</b>${state.sessionUser.admin?'<span class="tag">ADMIN</span>':''}</div>
+    <button class="linkbtn" onclick="logout()">sair</button>
+  `;
+}
+async function logout(){
+  await sb.auth.signOut();
+  state.sessionUser=null; state.authUser=null; state.tab='compra';
+  render();
+}
+
+function renderTabs(){
+  const tabs = $('#tabs');
+  if(!state.sessionUser){ tabs.innerHTML=''; return; }
+  const items = [
+    ['compra','Compra atual'],
+    ['mercados','Mercados'],
+    ['produtos','Produtos'],
+    ['historico','Histórico'],
+    ['qr','Ler nota (QR)'],
+  ];
+  if(state.sessionUser.admin) items.push(['usuarios','Usuários']);
+  tabs.innerHTML = items.map(([k,l])=>`<button class="${state.tab===k?'active':''}" onclick="setTab('${k}')">${l}</button>`).join('');
+}
+
+function renderLogin(){
+  const view = $('#view');
+
+  // Caso 1: sem sessão de conta nenhuma -> entrar ou criar conta
+  if(!state.authUser){
+    view.innerHTML = `
+      <h2 class="section-title">${state.authMode==='cadastro'?'Criar conta':'Entrar'}</h2>
+      <p class="section-hint">Acesso com e-mail e senha reais (Supabase Auth). Só quem tiver uma conta cadastrada e liberada pelo administrador consegue ver ou alterar os dados.</p>
+      <form class="form-block" onsubmit="return ${state.authMode==='cadastro'?'criarConta(event)':'entrar(event)'}">
+        <div class="field"><label>E-mail</label><input required type="email" id="au-email" placeholder="voce@exemplo.com"></div>
+        <div class="field"><label>Senha</label><input required type="password" minlength="6" id="au-senha" placeholder="mínimo 6 caracteres"></div>
+        <button class="btn" type="submit">${state.authMode==='cadastro'?'Criar conta':'Entrar'}</button>
+      </form>
+      <button class="linkbtn" onclick="alternarModoAuth()">${state.authMode==='cadastro'?'Já tenho conta, quero entrar':'Ainda não tenho conta, quero me cadastrar'}</button>
+      <div class="notice">${state.authMode==='cadastro'
+        ? 'Depois de criar a conta, o Supabase pode pedir confirmação por e-mail antes do primeiro acesso — confira sua caixa de entrada (e o spam).'
+        : 'Esqueceu a senha? Peça ao administrador para te ajudar a redefinir pelo painel do Supabase por enquanto.'}</div>
+    `;
+    return;
+  }
+
+  // Caso 2: tem conta autenticada, mas ainda não completou o cadastro (nome) no app
+  view.innerHTML = `
+    <h2 class="section-title">Complete seu cadastro</h2>
+    <p class="section-hint">Sua conta (${esc(state.authUser.email)}) está autenticada. Falta só o seu nome para aparecer nas listas de compra.</p>
+    <form class="form-block" onsubmit="return completarCadastro(event)">
+      <div class="field"><label>Seu nome</label><input required id="cc-nome" placeholder="Ex.: Lívio"></div>
+      <button class="btn" type="submit">Concluir</button>
+    </form>
+    <button class="linkbtn" onclick="logout()">sair desta conta</button>
+  `;
+}
+function alternarModoAuth(){ state.authMode = state.authMode==='cadastro' ? 'entrar' : 'cadastro'; render(); }
+
+async function criarConta(e){
+  e.preventDefault();
+  const email = $('#au-email').value.trim();
+  const senha = $('#au-senha').value;
+  const {data, error} = await sb.auth.signUp({email, password: senha});
+  if(error){ dbErr('criar conta', error); return false; }
+  if(!data.session){
+    toast('Conta criada! Confirme seu e-mail e depois entre normalmente.');
+    state.authMode='entrar';
+    render();
+    return false;
+  }
+  state.authUser = data.user;
+  render();
+  return false;
+}
+async function entrar(e){
+  e.preventDefault();
+  const email = $('#au-email').value.trim();
+  const senha = $('#au-senha').value;
+  const {data, error} = await sb.auth.signInWithPassword({email, password: senha});
+  if(error){ dbErr('entrar', error); return false; }
+  state.authUser = data.user;
+  await checarPerfil();
+  render();
+  return false;
+}
+async function completarCadastro(e){
+  e.preventDefault();
+  const nome = $('#cc-nome').value.trim();
+  if(!nome) return false;
+  const {count} = await sb.from('feira_usuarios').select('*', {count:'exact', head:true});
+  const admin = (count||0) === 0;
+  const {data, error} = await sb.from('feira_usuarios').insert({id: state.authUser.id, nome, admin}).select().single();
+  if(error){ dbErr('completar cadastro', error); return false; }
+  state.sessionUser = mapUsuario(data);
+  await loadAll();
+  render();
+  return false;
+}
+async function checarPerfil(){
+  if(!state.authUser){ state.sessionUser=null; return; }
+  const {data, error} = await sb.from('feira_usuarios').select('*').eq('id', state.authUser.id).maybeSingle();
+  if(error){ dbErr('carregar perfil', error); return; }
+  state.sessionUser = data ? mapUsuario(data) : null;
+}
+
+/* ---------------------------------------------------------
+   Mercados
+--------------------------------------------------------- */
+function renderMercados(view){
+  const ed = state.editing.mercado;
+  view.innerHTML = `
+    <h2 class="section-title">Supermercados da região</h2>
+    <p class="section-hint">Cadastre os mercados onde vocês costumam comprar, na Região Metropolitana do Recife.</p>
+    <form class="form-block" onsubmit="return salvarMercado(event)">
+      <div class="field"><label>Nome do mercado</label><input required id="mc-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Bompreço Shopping Recife"></div>
+      <div class="field-row">
+        <div class="field"><label>Bairro</label><input id="mc-bairro" value="${ed?esc(ed.bairro||''):''}" placeholder="Ex.: Boa Viagem"></div>
+        <div class="field"><label>Cidade</label>
+          <select id="mc-cidade">
+            ${CIDADES_RMR.map(c=>`<option ${ed&&ed.cidade===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar mercado'}</button>
+      ${ed?`<button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoMercado()">Cancelar</button>`:''}
+    </form>
+    <div id="lista-mercados"></div>
+  `;
+  const box = $('#lista-mercados');
+  if(state.mercados.length===0){
+    box.innerHTML = `<div class="empty">Nenhum mercado cadastrado ainda.</div>`;
+  } else {
+    box.innerHTML = state.mercados.map(m=>`
+      <div class="card">
+        <div class="row-top">
+          <div>
+            <div class="title">${esc(m.nome)}</div>
+            <div class="meta">${esc(m.bairro||'—')} · ${esc(m.cidade)}</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button onclick="editarMercado('${m.id}')">Editar</button>
+          <button class="danger" onclick="excluirMercado('${m.id}')">Excluir</button>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+async function salvarMercado(e){
+  e.preventDefault();
+  const nome = $('#mc-nome').value.trim();
+  if(!nome) return false;
+  const bairro = $('#mc-bairro').value.trim();
+  const cidade = $('#mc-cidade').value;
+  if(state.editing.mercado){
+    const {error} = await sb.from('feira_mercados').update({nome,bairro,cidade}).eq('id', state.editing.mercado.id);
+    if(error){ dbErr('salvar mercado', error); return false; }
+    state.editing.mercado = null;
+  } else {
+    const {error} = await sb.from('feira_mercados').insert({nome,bairro,cidade});
+    if(error){ dbErr('cadastrar mercado', error); return false; }
+  }
+  await loadAll();
+  render();
+  return false;
+}
+function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); render(); }
+function cancelarEdicaoMercado(){ state.editing.mercado=null; render(); }
+async function excluirMercado(id){
+  if(!confirm('Excluir este mercado?')) return;
+  const {error} = await sb.from('feira_mercados').delete().eq('id', id);
+  if(error){ dbErr('excluir mercado', error); return; }
+  await loadAll();
+  render();
+}
+
+/* ---------------------------------------------------------
+   Produtos
+--------------------------------------------------------- */
+function renderProdutos(view){
+  const ed = state.editing.produto;
+  view.innerHTML = `
+    <h2 class="section-title">Produtos</h2>
+    <p class="section-hint">Nome, categoria, unidade de medida e preço atual. Qualquer usuário cadastrado pode inserir, editar ou excluir.</p>
+    <form class="form-block" onsubmit="return salvarProduto(event)">
+      <div class="field"><label>Nome do produto</label><input required id="pr-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Arroz branco"></div>
+      <div class="field-row">
+        <div class="field"><label>Categoria</label>
+          <select id="pr-categoria">${CATEGORIAS.map(c=>`<option ${ed&&ed.categoria===c?'selected':''}>${c}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Unidade</label>
+          <select id="pr-unidade">${UNIDADES.map(u=>`<option ${ed&&ed.unidade===u?'selected':''}>${u}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field"><label>Preço atual (R$)</label><input required type="number" step="0.01" min="0" id="pr-preco" value="${ed?ed.preco:''}" placeholder="Ex.: 24.90"></div>
+      <button class="btn" type="submit">${ed?'Salvar alterações':'Cadastrar produto'}</button>
+      ${ed?`<button type="button" class="btn secondary" style="margin-left:8px" onclick="cancelarEdicaoProduto()">Cancelar</button>`:''}
+    </form>
+    <div id="lista-produtos"></div>
+  `;
+  const box = $('#lista-produtos');
+  if(state.produtos.length===0){
+    box.innerHTML = `<div class="empty">Nenhum produto cadastrado ainda.</div>`;
+  } else {
+    const ordenados = [...state.produtos].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    box.innerHTML = ordenados.map(p=>`
+      <div class="card">
+        <div class="row-top">
+          <div>
+            <div class="title">${esc(p.nome)}</div>
+            <div class="meta">${esc(p.categoria)} · por ${esc(p.unidade)}</div>
+          </div>
+          <div class="price">${fmtBRL(p.preco)}</div>
+        </div>
+        <div class="actions">
+          <button onclick="editarProduto('${p.id}')">Editar</button>
+          <button class="danger" onclick="excluirProduto('${p.id}')">Excluir</button>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+async function salvarProduto(e){
+  e.preventDefault();
+  const nome = $('#pr-nome').value.trim();
+  const preco = parseFloat($('#pr-preco').value);
+  if(!nome || isNaN(preco)) return false;
+  const categoria = $('#pr-categoria').value;
+  const unidade = $('#pr-unidade').value;
+  if(state.editing.produto){
+    const {error} = await sb.from('feira_produtos').update({nome,categoria,unidade,preco,atualizado_em:new Date().toISOString()}).eq('id', state.editing.produto.id);
+    if(error){ dbErr('salvar produto', error); return false; }
+    state.editing.produto = null;
+  } else {
+    const {error} = await sb.from('feira_produtos').insert({nome,categoria,unidade,preco});
+    if(error){ dbErr('cadastrar produto', error); return false; }
+  }
+  await loadAll();
+  render();
+  return false;
+}
+function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); render(); }
+function cancelarEdicaoProduto(){ state.editing.produto=null; render(); }
+async function excluirProduto(id){
+  if(!confirm('Excluir este produto?')) return;
+  const {error} = await sb.from('feira_produtos').delete().eq('id', id);
+  if(error){ dbErr('excluir produto', error); return; }
+  await loadAll();
+  render();
+}
+
+/* ---------------------------------------------------------
+   Usuários (admin)
+--------------------------------------------------------- */
+function renderUsuarios(view){
+  if(!state.sessionUser.admin){
+    view.innerHTML = `<div class="empty">Só o administrador pode gerenciar usuários.</div>`;
+    return;
+  }
+  view.innerHTML = `
+    <h2 class="section-title">Usuários</h2>
+    <p class="section-hint">Cada pessoa cria a própria conta (e-mail e senha) na tela de entrada e depois preenche o nome — ela aparece aqui como "usuário comum". Você promove a administrador ou remove o acesso quando quiser.</p>
+    <div class="notice">Para trazer alguém novo, peça para essa pessoa abrir o link do app e clicar em "Ainda não tenho conta, quero me cadastrar".</div>
+    <div id="lista-usuarios-adm"></div>
+  `;
+  const box = $('#lista-usuarios-adm');
+  box.innerHTML = state.usuarios.map(u=>`
+    <div class="card">
+      <div class="row-top">
+        <div>
+          <div class="title">${esc(u.nome)}${u.admin?'<span class="pill">admin</span>':''}</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button onclick="alternarAdmin('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>${u.admin?'Remover admin':'Tornar admin'}</button>
+        <button class="danger" onclick="excluirUsuario('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>Remover acesso</button>
+      </div>
+    </div>
+  `).join('');
+}
+async function alternarAdmin(id){
+  const u = state.usuarios.find(x=>x.id===id);
+  const {error} = await sb.from('feira_usuarios').update({admin: !u.admin}).eq('id', id);
+  if(error){ dbErr('atualizar usuário', error); return; }
+  await loadAll();
+  render();
+}
+async function excluirUsuario(id){
+  if(!confirm('Remover o acesso desta pessoa aos dados do app? A conta de login dela continua existindo, mas ela perde acesso às informações até ser recadastrada.')) return;
+  const {error} = await sb.from('feira_usuarios').delete().eq('id', id);
+  if(error){ dbErr('remover acesso', error); return; }
+  await loadAll();
+  if(state.sessionUser.id===id) state.sessionUser=null;
+  render();
+}
+
+/* ---------------------------------------------------------
+   Compra atual (lista online compartilhada)
+--------------------------------------------------------- */
+function totalCompra(c){
+  if(!c) return 0;
+  return c.itens.reduce((s,it)=>s+it.precoUnit*it.quantidade,0);
+}
+
+function renderCompra(view){
+  const c = state.compraAtual;
+
+  if(!c || c.status!=='aberta'){
+    if(state.mercados.length===0){
+      view.innerHTML = `<h2 class="section-title">Compra atual</h2>
+        <div class="empty">Cadastre ao menos um mercado antes de iniciar uma compra.</div>`;
+      return;
+    }
+    view.innerHTML = `
+      <h2 class="section-title">Iniciar nova compra</h2>
+      <p class="section-hint">Escolha o mercado. Todos que abrirem este mesmo link verão a lista e o total atualizados em tempo real.</p>
+      <form class="form-block" onsubmit="return iniciarCompra(event)">
+        <div class="field"><label>Mercado</label>
+          <select id="cp-mercado">
+            ${state.mercados.map(m=>`<option value="${m.id}">${esc(m.nome)} — ${esc(m.cidade)}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn" type="submit">Começar lista</button>
+      </form>
+    `;
+    return;
+  }
+
+  const mercado = state.mercados.find(m=>m.id===c.mercadoId);
+  const total = totalCompra(c);
+  const produtosDisponiveis = state.produtos;
+
+  view.innerHTML = `
+    <h2 class="section-title">${mercado?esc(mercado.nome):'Mercado removido'}</h2>
+    <p class="section-hint">Lista em aberto · iniciada em ${new Date(c.criadoEm).toLocaleString('pt-BR')}. Atualiza sozinha a cada poucos segundos para todo mundo.</p>
+
+    <form class="form-block" onsubmit="return adicionarItem(event)" style="display:flex;flex-direction:column;">
+      <div class="field"><label>Produto</label>
+        <select id="it-produto" ${produtosDisponiveis.length===0?'disabled':''}>
+          ${produtosDisponiveis.length===0
+            ? `<option>Nenhum produto cadastrado</option>`
+            : [...produtosDisponiveis].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(p=>`<option value="${p.id}">${esc(p.nome)} · ${fmtBRL(p.preco)}/${esc(p.unidade)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Quantidade</label><input type="number" min="0.01" step="0.01" id="it-qtd" value="1"></div>
+        <div class="field" style="display:flex;align-items:flex-end;">
+          <button class="btn" type="submit" style="width:100%" ${produtosDisponiveis.length===0?'disabled':''}>Adicionar à lista</button>
+        </div>
+      </div>
+    </form>
+
+    ${c.itens.length===0 ? `<div class="empty">A lista está vazia. Adicione o primeiro item acima.</div>` : `
+    <table class="receipt-table">
+      <thead><tr><th>Item</th><th>Qtd</th><th>Subtotal</th><th></th></tr></thead>
+      <tbody>
+        ${c.itens.map(it=>`
+          <tr>
+            <td>${esc(it.nome)}<br><span class="meta" style="font-size:10.5px">${it.precoUnit?fmtBRL(it.precoUnit):''}/${esc(it.unidade)} · add. ${esc(it.adicionadoPor||'—')}</span></td>
+            <td class="qtd"><input type="number" min="0.01" step="0.01" value="${it.quantidade}" onchange="mudarQtd('${it.id}', this.value)"></td>
+            <td class="num">${fmtBRL(it.precoUnit*it.quantidade)}</td>
+            <td><button class="rm" title="Remover" onclick="removerItem('${it.id}')">✕</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    `}
+
+    <div style="margin-top:16px;display:flex;gap:8px;">
+      <button class="btn secondary" onclick="cancelarCompra()">Cancelar compra</button>
+      <button class="btn" ${c.itens.length===0?'disabled':''} onclick="finalizarCompra()">Finalizar compra</button>
+    </div>
+
+    <div class="total-strip">
+      <div>
+        <div class="lbl">Total da lista · ${c.itens.length} ${c.itens.length===1?'item':'itens'}</div>
+      </div>
+      <div class="val">${fmtBRL(total)}</div>
+    </div>
+  `;
+}
+
+async function iniciarCompra(e){
+  e.preventDefault();
+  const mercadoId = $('#cp-mercado').value;
+  const {error} = await sb.from('feira_compras').insert({mercado_id: mercadoId, status:'aberta'});
+  if(error){ dbErr('iniciar compra', error); return false; }
+  await loadAll();
+  render();
+  return false;
+}
+async function adicionarItem(e){
+  e.preventDefault();
+  const produtoId = $('#it-produto').value;
+  const qtd = parseFloat($('#it-qtd').value);
+  const p = state.produtos.find(x=>x.id===produtoId);
+  if(!p || !qtd || qtd<=0) return false;
+  const {error} = await sb.from('feira_itens_compra').insert({
+    compra_id: state.compraAtual.id, produto_id:p.id, nome:p.nome, unidade:p.unidade,
+    preco_unit:p.preco, quantidade:qtd, adicionado_por: state.sessionUser.nome
+  });
+  if(error){ dbErr('adicionar item', error); return false; }
+  await loadAll();
+  render();
+  return false;
+}
+async function mudarQtd(itemId, val){
+  const q = parseFloat(val);
+  if(isNaN(q)||q<=0) { render(); return; }
+  const {error} = await sb.from('feira_itens_compra').update({quantidade:q}).eq('id', itemId);
+  if(error){ dbErr('alterar quantidade', error); return; }
+  await loadAll();
+  render();
+}
+async function removerItem(itemId){
+  const {error} = await sb.from('feira_itens_compra').delete().eq('id', itemId);
+  if(error){ dbErr('remover item', error); return; }
+  await loadAll();
+  render();
+}
+async function cancelarCompra(){
+  if(!confirm('Cancelar esta compra? A lista atual será apagada para todos.')) return;
+  const {error} = await sb.from('feira_compras').update({status:'cancelada'}).eq('id', state.compraAtual.id);
+  if(error){ dbErr('cancelar compra', error); return; }
+  await loadAll();
+  render();
+}
+async function finalizarCompra(){
+  if(!confirm('Finalizar e mover esta compra para o histórico?')) return;
+  const {error} = await sb.from('feira_compras').update({status:'finalizada', finalizada_em:new Date().toISOString()}).eq('id', state.compraAtual.id);
+  if(error){ dbErr('finalizar compra', error); return; }
+  await loadAll();
+  render();
+  toast('Compra finalizada e movida para o histórico.');
+}
+
+/* ---------------------------------------------------------
+   Histórico
+--------------------------------------------------------- */
+function renderHistorico(view){
+  view.innerHTML = `
+    <h2 class="section-title">Histórico de compras</h2>
+    <p class="section-hint">Compras já finalizadas, mais recentes primeiro.</p>
+    <div id="lista-historico"></div>
+  `;
+  const box = $('#lista-historico');
+  if(state.historico.length===0){
+    box.innerHTML = `<div class="empty">Nenhuma compra finalizada ainda.</div>`;
+    return;
+  }
+  box.innerHTML = state.historico.map(c=>`
+    <div class="card">
+      <div class="row-top">
+        <div>
+          <div class="title">${esc(c.mercadoNome)}</div>
+          <div class="meta">${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')} · ${c.itens.length} itens</div>
+        </div>
+        <div class="price">${fmtBRL(c.total)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ---------------------------------------------------------
+   Leitor de QR Code (notas fiscais anteriores)
+--------------------------------------------------------- */
+let qrStream = null, qrLoopId = null;
+
+function renderQR(view){
+  view.innerHTML = `
+    <h2 class="section-title">Ler QR Code de nota anterior</h2>
+    <p class="section-hint">Aponte a câmera para o QR Code da nota (NFC-e) ou envie uma foto. O código traz o link e a chave de acesso da nota na Sefaz.</p>
+
+    <div class="qr-box">
+      <button class="btn" onclick="iniciarCamera()">Usar câmera</button>
+      <input type="file" accept="image/*" id="qr-file" style="margin-top:10px" onchange="lerArquivoQR(event)">
+      <div><video id="qr-video" playsinline style="display:none"></video></div>
+      <canvas id="qr-canvas" style="display:none"></canvas>
+    </div>
+
+    <div id="qr-output"></div>
+
+    <div class="notice">
+      Sites de Sefaz normalmente bloqueiam o carregamento automático dos itens da nota por outros aplicativos (bloqueio de origem cruzada). Este leitor decodifica o QR Code e mostra o link e a chave de acesso — abra o link para conferir os produtos e cadastre-os manualmente na aba Produtos ou direto na Compra atual.
+    </div>
+  `;
+}
+
+async function iniciarCamera(){
+  const video = $('#qr-video');
+  try{
+    qrStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+  }catch(e){
+    toast('Não foi possível acessar a câmera: '+e.message);
+    return;
+  }
+  video.srcObject = qrStream;
+  video.style.display = 'block';
+  await video.play();
+  const canvas = $('#qr-canvas');
+  const ctx = canvas.getContext('2d', {willReadFrequently:true});
+  function tick(){
+    if(video.readyState === video.HAVE_ENOUGH_DATA){
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code = window.jsQR ? jsQR(img.data, img.width, img.height) : null;
+      if(code){
+        pararCamera();
+        mostrarResultadoQR(code.data);
+        return;
+      }
+    }
+    qrLoopId = requestAnimationFrame(tick);
+  }
+  tick();
+}
+function pararCamera(){
+  if(qrLoopId) cancelAnimationFrame(qrLoopId);
+  if(qrStream) qrStream.getTracks().forEach(t=>t.stop());
+  qrStream=null; qrLoopId=null;
+  const video = $('#qr-video');
+  if(video) video.style.display='none';
+}
+function lerArquivoQR(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = ev => {
+    img.onload = () => {
+      const canvas = $('#qr-canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img,0,0);
+      const data = ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code = window.jsQR ? jsQR(data.data, data.width, data.height) : null;
+      if(code) mostrarResultadoQR(code.data);
+      else toast('Não foi possível ler um QR Code nessa imagem.');
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function mostrarResultadoQR(texto){
+  const chave = (texto.match(/[?&]p=(\d{44})/) || texto.match(/(\d{44})/) || [])[1];
+  const out = $('#qr-output');
+  out.innerHTML = `
+    <div class="qr-result">
+      <div><b>Conteúdo lido:</b></div>
+      <div style="margin:6px 0">${esc(texto)}</div>
+      ${chave ? `<div><b>Chave de acesso:</b> ${esc(chave)}</div>` : ''}
+      ${/^https?:\/\//.test(texto) ? `<a href="${esc(texto)}" target="_blank" rel="noopener">Abrir nota em nova aba →</a>` : ''}
+    </div>
+  `;
+}
+
+/* ---------------------------------------------------------
+   Instalar como app (PWA)
+--------------------------------------------------------- */
+let deferredInstallPrompt = null;
+let installDismissed = false;
+
+function isStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function isIOS(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function renderInstallBar(){
+  const el = document.getElementById('install-bar');
+  if(!el) return;
+  if(installDismissed || isStandalone()){ el.style.display='none'; el.innerHTML=''; return; }
+  if(deferredInstallPrompt){
+    el.style.display='flex';
+    el.innerHTML = `<span>Instale o <b>Feira do Mês</b> na tela inicial do celular.</span>
+      <span style="display:flex;gap:10px;align-items:center;white-space:nowrap">
+        <button class="btn" style="padding:6px 12px" onclick="instalarApp()">Instalar</button>
+        <button class="linkbtn" onclick="dismissInstallBar()">agora não</button>
+      </span>`;
+  } else if(isIOS()){
+    el.style.display='flex';
+    el.innerHTML = `<span>Para instalar: toque em <b>Compartilhar</b> e depois em <b>"Adicionar à Tela de Início"</b>.</span>
+      <button class="linkbtn" onclick="dismissInstallBar()">ok</button>`;
+  } else {
+    el.style.display='none';
+  }
+}
+function dismissInstallBar(){ installDismissed = true; renderInstallBar(); }
+async function instalarApp(){
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  renderInstallBar();
+}
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  renderInstallBar();
+});
+window.addEventListener('appinstalled', ()=>{
+  deferredInstallPrompt = null;
+  renderInstallBar();
+});
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+/* ---------------------------------------------------------
+   Start
+--------------------------------------------------------- */
+init();
+renderInstallBar();
+</script>
+</body>
+</html>
