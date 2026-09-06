@@ -925,9 +925,11 @@ async function salvarMercado(e){
   return false;
 }
 function rolarParaTopo(){
-  const app = $('#app');
-  if(app && app.scrollIntoView) app.scrollIntoView({behavior:'smooth', block:'start'});
-  window.scrollTo({top:0, behavior:'smooth'});
+  setTimeout(()=>{
+    window.scrollTo(0,0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, 0);
 }
 function abrirNovoMercado(){ state.mostrarFormMercado = true; state.editing.mercado = null; render(); rolarParaTopo(); }
 function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); state.mostrarFormMercado = true; render(); rolarParaTopo(); }
