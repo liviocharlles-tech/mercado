@@ -924,8 +924,13 @@ async function salvarMercado(e){
   render();
   return false;
 }
-function abrirNovoMercado(){ state.mostrarFormMercado = true; state.editing.mercado = null; render(); }
-function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); state.mostrarFormMercado = true; render(); }
+function rolarParaTopo(){
+  const app = $('#app');
+  if(app && app.scrollIntoView) app.scrollIntoView({behavior:'smooth', block:'start'});
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function abrirNovoMercado(){ state.mostrarFormMercado = true; state.editing.mercado = null; render(); rolarParaTopo(); }
+function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); state.mostrarFormMercado = true; render(); rolarParaTopo(); }
 function cancelarEdicaoMercado(){ state.editing.mercado=null; state.mostrarFormMercado=false; render(); }
 async function excluirMercado(id){
   if(!confirm('Excluir este mercado?')) return;
@@ -1062,8 +1067,8 @@ async function salvarProduto(e){
   render();
   return false;
 }
-function abrirNovoProduto(){ state.mostrarFormProduto = true; state.editing.produto = null; render(); }
-function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); state.mostrarFormProduto = true; render(); }
+function abrirNovoProduto(){ state.mostrarFormProduto = true; state.editing.produto = null; render(); rolarParaTopo(); }
+function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); state.mostrarFormProduto = true; render(); rolarParaTopo(); }
 function cancelarEdicaoProduto(){ state.editing.produto=null; state.mostrarFormProduto=false; render(); }
 async function excluirProduto(id){
   if(!confirm('Excluir este produto?')) return;
