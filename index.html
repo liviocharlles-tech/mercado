@@ -392,6 +392,7 @@ let state = {
   importadosSelecionados: [],
   mostrarFormMercado: false,
   mostrarFormProduto: false,
+  detalheHistoricoId: null,
 };
 
 async function loadAll(){
@@ -508,12 +509,14 @@ function temSubtelaAberta(){
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)) return true;
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)) return true;
   if(state.tab==='qr' && state.importadosNota) return true;
+  if(state.tab==='historico' && state.detalheHistoricoId) return true;
   return false;
 }
 function voltar(){
   if(state.tab==='qr' && state.importadosNota){ state.importadosNota=null; state.importadosSelecionados=[]; render(); return; }
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)){ cancelarEdicaoMercado(); return; }
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)){ cancelarEdicaoProduto(); return; }
+  if(state.tab==='historico' && state.detalheHistoricoId){ state.detalheHistoricoId=null; render(); return; }
   setTab('compra');
 }
 function renderBackBar(){
@@ -1402,6 +1405,10 @@ async function finalizarCompra(){
    Histórico
 --------------------------------------------------------- */
 function renderHistorico(view){
+  if(state.detalheHistoricoId){
+    renderDetalheHistorico(view);
+    return;
+  }
   view.innerHTML = `
     <h2 class="section-title">Histórico de compras</h2>
     <p class="section-hint">Compras já finalizadas, mais recentes primeiro.</p>
@@ -1424,8 +1431,131 @@ function renderHistorico(view){
         </div>
         <div class="price">${fmtBRL(c.total)}</div>
       </div>
+      <div class="actions">
+        <button class="primary" onclick="abrirDetalheHistorico('${c.id}')">👁️ Ver / Imprimir</button>
+        <button onclick="reutilizarCompra('${c.id}')">🔁 Reutilizar</button>
+        <button class="danger" onclick="excluirCompraHistorico('${c.id}')">Excluir</button>
+      </div>
     </div>
   `).join('');
+}
+
+function renderDetalheHistorico(view){
+  const c = state.historico.find(x=>x.id===state.detalheHistoricoId);
+  if(!c){ state.detalheHistoricoId=null; view.innerHTML = `<div class="empty">Compra não encontrada.</div>`; return; }
+  view.innerHTML = `
+    <div id="recibo-tela">
+      ${gerarReciboHTML(c)}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+      <button class="btn" onclick="imprimirCompra('${c.id}')">🖨️ Imprimir</button>
+      <button class="btn secondary" onclick="reutilizarCompra('${c.id}')">🔁 Reutilizar esta compra</button>
+      <button class="btn warn" onclick="excluirCompraHistorico('${c.id}')">Excluir</button>
+    </div>
+  `;
+}
+
+function gerarReciboHTML(c){
+  return `
+    <div class="card" style="border-left:4px solid ${esc(c.mercadoCor||'var(--line)')};">
+      <div class="row-top">
+        ${c.mercadoImagem ? `<img src="${esc(c.mercadoImagem)}" class="img-thumb">` : ''}
+        <div style="flex:1">
+          <div class="title">${esc(c.mercadoNome)}</div>
+          <div class="meta">${new Date(c.finalizadaEm).toLocaleString('pt-BR')}</div>
+        </div>
+      </div>
+    </div>
+    <table class="receipt-table">
+      <thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th></tr></thead>
+      <tbody>
+        ${c.itens.map(it=>`
+          <tr>
+            <td>${esc(it.nome)}</td>
+            <td>${it.quantidade} ${esc(it.unidade)}</td>
+            <td class="num">${fmtBRL(it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)}</td>
+            <td class="num">${fmtBRL((it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)*it.quantidade)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div class="total-strip" style="position:static;margin:16px 0 0;">
+      <div class="lbl">Total da compra · ${c.itens.length} itens</div>
+      <div class="val">${fmtBRL(c.total)}</div>
+    </div>
+  `;
+}
+
+function imprimirCompra(id){
+  const c = state.historico.find(x=>x.id===id);
+  if(!c) return;
+  const janela = window.open('', '_blank');
+  if(!janela){ toast('Seu navegador bloqueou a janela de impressão. Permita pop-ups para este site.'); return; }
+  janela.document.write(`
+    <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Nota — ${esc(c.mercadoNome)} — ${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:24px;color:#1B1E19;max-width:480px;margin:0 auto;}
+      h1{font-size:18px;margin:0 0 2px;}
+      .meta{color:#555;font-size:12px;margin-bottom:16px;}
+      table{width:100%;border-collapse:collapse;font-size:13px;}
+      th{text-align:left;border-bottom:2px solid #333;padding:6px 4px;font-size:11px;}
+      td{padding:6px 4px;border-bottom:1px solid #ddd;}
+      td:nth-child(2),td:nth-child(3),td:nth-child(4),th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right;}
+      .total{display:flex;justify-content:space-between;font-weight:bold;font-size:16px;margin-top:14px;border-top:2px solid #333;padding-top:10px;}
+    </style></head><body>
+    <h1>${esc(c.mercadoNome)}</h1>
+    <div class="meta">${new Date(c.finalizadaEm).toLocaleString('pt-BR')} · Feira do Mês</div>
+    <table>
+      <thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th></tr></thead>
+      <tbody>
+        ${c.itens.map(it=>`<tr><td>${esc(it.nome)}</td><td>${it.quantidade} ${esc(it.unidade)}</td><td>${fmtBRL(it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)}</td><td>${fmtBRL((it.pego && it.precoReal!==null ? it.precoReal : it.precoUnit)*it.quantidade)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="total"><span>Total</span><span>${fmtBRL(c.total)}</span></div>
+    <script>window.onload = () => { window.print(); };</script>
+    </body></html>
+  `);
+  janela.document.close();
+}
+
+function abrirDetalheHistorico(id){ state.detalheHistoricoId = id; render(); rolarParaTopo(); }
+
+async function reutilizarCompra(id){
+  if(state.compraAtual){ toast('Já existe uma compra em andamento. Finalize ou cancele antes de reutilizar esta.'); return; }
+  const c = state.historico.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm(`Criar uma nova compra em "${c.mercadoNome}" com os mesmos ${c.itens.length} itens desta lista?`)) return;
+
+  const {data:novaCompra, error} = await sb.from('feira_compras').insert({mercado_id:c.mercadoId, status:'aberta'}).select().single();
+  if(error){ dbErr('reutilizar compra', error); return; }
+
+  for(const it of c.itens){
+    const produtoAtual = state.produtos.find(p=>p.id===it.produtoId);
+    await sb.from('feira_itens_compra').insert({
+      compra_id: novaCompra.id, produto_id: it.produtoId,
+      nome: it.nome, unidade: it.unidade,
+      preco_unit: produtoAtual ? produtoAtual.preco : it.precoUnit,
+      quantidade: it.quantidade, adicionado_por: state.sessionUser.nome,
+      imagem_url: (produtoAtual && produtoAtual.imagemUrl) || it.imagemUrl || null
+    });
+  }
+  state.detalheHistoricoId = null;
+  await loadAll();
+  setTab('compra');
+  toast('Compra recriada com os mesmos itens — confira os preços antes de sair às compras!');
+}
+
+async function excluirCompraHistorico(id){
+  const c = state.historico.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm(`Excluir definitivamente a compra em "${c.mercadoNome}" de ${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')}? Essa ação não pode ser desfeita.`)) return;
+  const {error} = await sb.from('feira_compras').delete().eq('id', id);
+  if(error){ dbErr('excluir compra', error); return; }
+  if(state.detalheHistoricoId===id) state.detalheHistoricoId = null;
+  await loadAll();
+  render();
+  toast('Compra excluída do histórico.');
 }
 
 /* ---------------------------------------------------------
