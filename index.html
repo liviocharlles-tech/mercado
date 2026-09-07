@@ -251,6 +251,11 @@
     max-width:92vw;max-height:85vh;border-radius:var(--radius);
     box-shadow:var(--shadow-lg);
   }
+  .modal-box{
+    background:#fff;border-radius:var(--radius);padding:22px;
+    width:90%;max-width:340px;box-shadow:var(--shadow-lg);cursor:default;
+  }
+  .modal-box h3{margin:0 0 6px;font-size:16px;color:var(--ink);}
   .btn{
     display:inline-block;padding:11px 18px;background:var(--green);color:#fff;
     border:none;border-radius:999px;cursor:pointer;font-family:'Manrope';font-weight:800;font-size:13.5px;
@@ -972,7 +977,7 @@ function abrirNovoMercado(){ state.mostrarFormMercado = true; state.editing.merc
 function editarMercado(id){ state.editing.mercado = state.mercados.find(x=>x.id===id); state.mostrarFormMercado = true; render(); rolarParaTopo(); }
 function cancelarEdicaoMercado(){ state.editing.mercado=null; state.mostrarFormMercado=false; render(); }
 async function excluirMercado(id){
-  if(!confirm('Excluir este mercado?')) return;
+  if(!await confirmarModal('Excluir este mercado?', {perigo:true, textoOk:'Excluir'})) return;
   const {error} = await sb.from('feira_mercados').delete().eq('id', id);
   if(error){ dbErr('excluir mercado', error); return; }
   await loadAll();
@@ -1092,7 +1097,7 @@ async function salvarProduto(e){
     // verifica duplicidade por nome (ignorando maiúsculas/minúsculas e acentos) antes de cadastrar
     const existente = state.produtos.find(p => normalizarTexto(p.nome) === normalizarTexto(nome));
     if(existente){
-      const atualizar = confirm(`Já existe um produto chamado "${existente.nome}" (preço atual ${fmtBRL(existente.preco)}).\n\nClique OK para atualizar esse produto com os novos dados, ou Cancelar para não cadastrar (evitando um duplicado).`);
+      const atualizar = await confirmarModal(`Já existe um produto chamado "${existente.nome}" (preço atual ${fmtBRL(existente.preco)}).\n\nToque em OK para atualizar esse produto com os novos dados, ou Cancelar para não cadastrar (evitando um duplicado).`, {titulo:'Produto já cadastrado'});
       if(!atualizar) return false;
       const {error} = await sb.from('feira_produtos').update({categoria,unidade,preco,imagem_url,atualizado_em:new Date().toISOString()}).eq('id', existente.id);
       if(error){ dbErr('atualizar produto existente', error); return false; }
@@ -1110,7 +1115,7 @@ function abrirNovoProduto(){ state.mostrarFormProduto = true; state.editing.prod
 function editarProduto(id){ state.editing.produto = state.produtos.find(x=>x.id===id); state.mostrarFormProduto = true; render(); rolarParaTopo(); }
 function cancelarEdicaoProduto(){ state.editing.produto=null; state.mostrarFormProduto=false; render(); }
 async function excluirProduto(id){
-  if(!confirm('Excluir este produto?')) return;
+  if(!await confirmarModal('Excluir este produto?', {perigo:true, textoOk:'Excluir'})) return;
   const {error} = await sb.from('feira_produtos').delete().eq('id', id);
   if(error){ dbErr('excluir produto', error); return; }
   await loadAll();
@@ -1127,14 +1132,50 @@ function renderUsuarios(view){
   }
   view.innerHTML = `
     <h2 class="section-title">Usuários</h2>
-    <p class="section-hint">Pessoas da organização "${esc(state.organizacao?.nome||'')}" — cada uma cria a própria conta (e-mail e senha) e entra com o código de convite abaixo. Você promove a administrador ou remove o acesso quando quiser.</p>
+    <p class="section-hint">Pessoas da organização "${esc(state.organizacao?.nome||'')}". Cadastre um usuário secundário diretamente abaixo, ou use o código de convite para quem preferir criar a própria conta.</p>
+    <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
+      <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
+      <div class="field"><label>E-mail</label><input required type="email" id="us-email" placeholder="maria@exemplo.com"></div>
+      <button class="btn" type="submit">Cadastrar usuário</button>
+    </form>
+    <div id="us-resultado"></div>
     <div class="notice">
-      <b>Código de convite:</b> <span style="font-family:monospace;font-size:14px;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">${esc(state.organizacao?.codigoConvite||state.organizacao?.codigo_convite||'')}</span><br>
-      Compartilhe com quem quiser convidar. Na tela de cadastro, a pessoa escolhe "Tenho um código" e cola isso aqui.
+      Alternativa: compartilhe o <b>código de convite</b> <span style="font-family:monospace;font-size:13px;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">${esc(state.organizacao?.codigoConvite||state.organizacao?.codigo_convite||'')}</span> para quem quiser criar a própria conta na tela de cadastro.
     </div>
     <div id="lista-usuarios-adm"></div>
   `;
+  atualizarListaUsuariosAdm();
+}
+async function cadastrarUsuarioSecundario(e){
+  e.preventDefault();
+  const nome = $('#us-nome').value.trim();
+  const email = $('#us-email').value.trim();
+  if(!nome || !email) return false;
+  const resultado = $('#us-resultado');
+  resultado.innerHTML = `<p class="section-hint" style="margin:0 0 12px">Cadastrando...</p>`;
+
+  const {data, error} = await sb.functions.invoke('admin-criar-usuario', {body:{nome, email}});
+  if(error || !data || data.error){
+    resultado.innerHTML = `<div class="notice" style="margin-bottom:14px">Não foi possível cadastrar: ${esc((data&&data.error)||error?.message||'erro desconhecido')}</div>`;
+    return false;
+  }
+
+  resultado.innerHTML = `
+    <div class="qr-result" style="margin-bottom:14px">
+      <div><b>Usuário criado!</b> Compartilhe esses dados de acesso com ${esc(nome)} (essa senha não vai aparecer de novo):</div>
+      <div style="margin-top:8px"><b>E-mail:</b> ${esc(data.email)}</div>
+      <div><b>Senha temporária:</b> <span style="font-family:monospace;font-size:14px;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">${esc(data.senha)}</span></div>
+      <p class="section-hint" style="margin:8px 0 0">Ela já pode entrar direto no app com esses dados, e trocar a senha depois em "Esqueceu a senha?" se quiser.</p>
+    </div>
+  `;
+  $('#us-nome').value=''; $('#us-email').value='';
+  await loadAll();
+  atualizarListaUsuariosAdm();
+  return false;
+}
+function atualizarListaUsuariosAdm(){
   const box = $('#lista-usuarios-adm');
+  if(!box) return;
   box.innerHTML = state.usuarios.map(u=>`
     <div class="card">
       <div class="row-top">
@@ -1157,7 +1198,7 @@ async function alternarAdmin(id){
   render();
 }
 async function excluirUsuario(id){
-  if(!confirm('Remover o acesso desta pessoa aos dados do app? A conta de login dela continua existindo, mas ela perde acesso às informações até ser recadastrada.')) return;
+  if(!await confirmarModal('Remover o acesso desta pessoa aos dados do app? A conta de login dela continua existindo, mas ela perde acesso às informações até ser recadastrada.', {perigo:true, textoOk:'Remover acesso'})) return;
   const {error} = await sb.from('feira_usuarios').delete().eq('id', id);
   if(error){ dbErr('remover acesso', error); return; }
   await loadAll();
@@ -1260,7 +1301,7 @@ function renderCompra(view){
         ${c.itens.map(it=>`
           <tr class="${it.pego?'item-pego':''}">
             <td class="pego-cell">
-              <input type="checkbox" class="chk-pego" ${it.pego?'checked':''} onchange="togglePego('${it.id}', this.checked)" aria-label="Já peguei este item">
+              <input type="checkbox" id="chk-pego-${it.id}" class="chk-pego" ${it.pego?'checked':''} onchange="togglePego('${it.id}', this.checked)" aria-label="Já peguei este item">
             </td>
             <td>
               <div style="display:flex;align-items:center;gap:8px;">
@@ -1393,15 +1434,68 @@ async function adicionarItem(e){
   render();
   return false;
 }
+function confirmarModal(mensagem, opcoes){
+  opcoes = opcoes || {};
+  return new Promise(resolve=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.style.cursor = 'default';
+    overlay.innerHTML = `
+      <div class="modal-box" onclick="event.stopPropagation()">
+        ${opcoes.titulo ? `<h3>${esc(opcoes.titulo)}</h3>` : ''}
+        <p class="section-hint" style="margin:0 0 4px;white-space:pre-line">${esc(mensagem)}</p>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button type="button" class="btn secondary" id="modal-cancelar" style="flex:1">${esc(opcoes.textoCancelar||'Cancelar')}</button>
+          <button type="button" class="btn ${opcoes.perigo?'warn':''}" id="modal-ok" style="flex:1">${esc(opcoes.textoOk||'OK')}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const finalizar = (v) => { overlay.remove(); resolve(v); };
+    overlay.querySelector('#modal-ok').onclick = () => finalizar(true);
+    overlay.querySelector('#modal-cancelar').onclick = () => finalizar(false);
+    overlay.onclick = () => finalizar(false);
+  });
+}
+function pedirValorReal(sugestao){
+  return new Promise(resolve=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.style.cursor = 'default';
+    overlay.innerHTML = `
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h3>Valor real do item</h3>
+        <p class="section-hint" style="margin:0 0 12px">Qual foi o valor real por unidade? Deixe como está se não mudou.</p>
+        <input type="number" step="0.01" min="0" id="modal-valor-real" value="${sugestao.toFixed(2)}" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);font-size:16px;">
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button type="button" class="btn secondary" id="modal-cancelar" style="flex:1">Cancelar</button>
+          <button type="button" class="btn" id="modal-ok" style="flex:1">OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#modal-valor-real');
+    input.focus();
+    input.select();
+    const finalizar = (valor) => { overlay.remove(); resolve(valor); };
+    overlay.querySelector('#modal-ok').onclick = () => finalizar(parseFloat(input.value));
+    overlay.querySelector('#modal-cancelar').onclick = () => finalizar(null);
+    overlay.onclick = () => finalizar(null);
+    input.onkeydown = (e) => { if(e.key==='Enter'){ e.preventDefault(); finalizar(parseFloat(input.value)); } };
+  });
+}
 async function togglePego(itemId, pego){
   const patch = {pego};
   if(pego){
     const it = state.compraAtual.itens.find(x=>x.id===itemId);
     const sugestao = it ? (it.precoReal ?? it.precoUnit) : 0;
-    const digitado = prompt('Qual foi o valor real por unidade desse item? (deixe como está se não mudou)', sugestao.toFixed(2).replace('.',','));
-    if(digitado===null) return; // cancelou, não marca como pego
-    const valor = parseFloat(digitado.replace(',','.'));
-    patch.preco_real = isNaN(valor) ? sugestao : valor;
+    const valor = await pedirValorReal(sugestao);
+    if(valor===null || isNaN(valor)){
+      const chk = $('#chk-pego-'+itemId);
+      if(chk) chk.checked = false; // cancelou: desmarca a caixinha de volta
+      return;
+    }
+    patch.preco_real = valor;
   }
   const {error} = await sb.from('feira_itens_compra').update(patch).eq('id', itemId);
   if(error){ dbErr('marcar item', error); return; }
@@ -1423,14 +1517,14 @@ async function removerItem(itemId){
   render();
 }
 async function cancelarCompra(){
-  if(!confirm('Cancelar esta compra? A lista atual será apagada para todos.')) return;
+  if(!await confirmarModal('Cancelar esta compra? A lista atual será apagada para todos.', {perigo:true, textoOk:'Cancelar compra'})) return;
   const {error} = await sb.from('feira_compras').update({status:'cancelada'}).eq('id', state.compraAtual.id);
   if(error){ dbErr('cancelar compra', error); return; }
   await loadAll();
   render();
 }
 async function finalizarCompra(){
-  if(!confirm('Finalizar e mover esta compra para o histórico?')) return;
+  if(!await confirmarModal('Finalizar e mover esta compra para o histórico?', {textoOk:'Finalizar'})) return;
   const {error} = await sb.from('feira_compras').update({status:'finalizada', finalizada_em:new Date().toISOString()}).eq('id', state.compraAtual.id);
   if(error){ dbErr('finalizar compra', error); return; }
   await loadAll();
@@ -1577,7 +1671,7 @@ async function reutilizarCompra(id){
   if(state.compraAtual){ toast('Já existe uma compra em andamento. Finalize ou cancele antes de reutilizar esta.'); return; }
   const c = state.historico.find(x=>x.id===id);
   if(!c) return;
-  if(!confirm(`Criar uma nova compra em "${c.mercadoNome}" com os mesmos ${c.itens.length} itens desta lista?`)) return;
+  if(!await confirmarModal(`Criar uma nova compra em "${c.mercadoNome}" com os mesmos ${c.itens.length} itens desta lista?`, {textoOk:'Criar'})) return;
 
   const {data:novaCompra, error} = await sb.from('feira_compras').insert({mercado_id:c.mercadoId, status:'aberta'}).select().single();
   if(error){ dbErr('reutilizar compra', error); return; }
@@ -1601,7 +1695,7 @@ async function reutilizarCompra(id){
 async function excluirCompraHistorico(id){
   const c = state.historico.find(x=>x.id===id);
   if(!c) return;
-  if(!confirm(`Excluir definitivamente a compra em "${c.mercadoNome}" de ${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')}? Essa ação não pode ser desfeita.`)) return;
+  if(!await confirmarModal(`Excluir definitivamente a compra em "${c.mercadoNome}" de ${new Date(c.finalizadaEm).toLocaleDateString('pt-BR')}? Essa ação não pode ser desfeita.`, {perigo:true, textoOk:'Excluir'})) return;
   const {error} = await sb.from('feira_compras').delete().eq('id', id);
   if(error){ dbErr('excluir compra', error); return; }
   if(state.detalheHistoricoId===id) state.detalheHistoricoId = null;
