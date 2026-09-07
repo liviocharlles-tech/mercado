@@ -386,7 +386,9 @@ let state = {
   historico: [],
   authUser: null,       // sessão do Supabase Auth (auth.users)
   authMode: 'entrar',   // 'entrar' | 'cadastro'
+  modoOrganizacao: 'criar', // 'criar' | 'entrar' — usado na tela de completar cadastro
   sessionUser: null,    // linha correspondente em feira.usuarios
+  organizacao: null,    // linha correspondente em feira.organizacoes
   editing: {mercado:null, produto:null, usuario:null},
   importadosNota: null,
   importadosSelecionados: [],
@@ -634,13 +636,25 @@ function renderLogin(){
     return;
   }
 
-  // Caso 3: tem conta autenticada, mas ainda não completou o cadastro (nome) no app
+  // Caso 3: tem conta autenticada, mas ainda não completou o cadastro (nome + organização) no app
+  const modoOrg = state.modoOrganizacao || 'criar';
   view.innerHTML = `
     <h2 class="section-title">Complete seu cadastro</h2>
-    <p class="section-hint">Sua conta (${esc(state.authUser.email)}) está autenticada. Falta só o seu nome para aparecer nas listas de compra.</p>
+    <p class="section-hint">Sua conta (${esc(state.authUser.email)}) está autenticada.</p>
     <form class="form-block" onsubmit="return completarCadastro(event)">
       <div class="field"><label>Seu nome</label><input required id="cc-nome" placeholder="Ex.: Lívio"></div>
-      <button class="btn" type="submit">Concluir</button>
+      <div class="field-row" style="margin-bottom:12px">
+        <button type="button" class="btn ${modoOrg==='criar'?'':'secondary'}" style="flex:1" onclick="state.modoOrganizacao='criar'; render();">Criar organização</button>
+        <button type="button" class="btn ${modoOrg==='entrar'?'':'secondary'}" style="flex:1" onclick="state.modoOrganizacao='entrar'; render();">Tenho um código</button>
+      </div>
+      ${modoOrg==='criar' ? `
+        <div class="field"><label>Nome da organização (família, empresa, grupo...)</label><input required id="cc-org-nome" placeholder="Ex.: Família Rembrandt"></div>
+        <div class="notice">Você vira administrador dessa organização e poderá convidar outras pessoas depois, na aba Usuários.</div>
+      ` : `
+        <div class="field"><label>Código de convite</label><input required id="cc-org-codigo" placeholder="Ex.: a1b2c3d4" maxlength="8" style="text-transform:lowercase"></div>
+        <div class="notice">Peça esse código para o administrador da organização que você quer entrar.</div>
+      `}
+      <button class="btn" type="submit" style="margin-top:10px">Concluir</button>
     </form>
     <button class="linkbtn" onclick="logout()">sair desta conta</button>
   `;
@@ -701,20 +715,40 @@ async function completarCadastro(e){
   e.preventDefault();
   const nome = $('#cc-nome').value.trim();
   if(!nome) return false;
-  const {count} = await sb.from('feira_usuarios').select('*', {count:'exact', head:true});
-  const admin = (count||0) === 0;
-  const {data, error} = await sb.from('feira_usuarios').insert({id: state.authUser.id, nome, admin}).select().single();
+  const modoOrg = state.modoOrganizacao || 'criar';
+  let organizacaoId;
+
+  if(modoOrg==='criar'){
+    const nomeOrg = $('#cc-org-nome').value.trim();
+    if(!nomeOrg) return false;
+    organizacaoId = crypto.randomUUID(); // gerado no cliente pra não depender de ler de volta (RLS só libera leitura após o cadastro do usuário)
+    const {error: errOrg} = await sb.from('feira_organizacoes').insert({id: organizacaoId, nome: nomeOrg});
+    if(errOrg){ dbErr('criar organização', errOrg); return false; }
+  } else {
+    const codigo = $('#cc-org-codigo').value.trim().toLowerCase();
+    if(!codigo) return false;
+    const {data: orgs, error: errBusca} = await sb.rpc('buscar_organizacao_por_convite', {p_codigo: codigo});
+    if(errBusca){ dbErr('buscar organização', errBusca); return false; }
+    if(!orgs || orgs.length===0){ toast('Código de convite não encontrado. Confira com o administrador.'); return false; }
+    organizacaoId = orgs[0].id;
+  }
+
+  const {data, error} = await sb.from('feira_usuarios').insert({id: state.authUser.id, nome, organizacao_id: organizacaoId, admin: modoOrg==='criar'}).select().single();
   if(error){ dbErr('completar cadastro', error); return false; }
-  state.sessionUser = mapUsuario(data);
+  await checarPerfil();
   await loadAll();
   render();
   return false;
 }
 async function checarPerfil(){
-  if(!state.authUser){ state.sessionUser=null; return; }
+  if(!state.authUser){ state.sessionUser=null; state.organizacao=null; return; }
   const {data, error} = await sb.from('feira_usuarios').select('*').eq('id', state.authUser.id).maybeSingle();
   if(error){ dbErr('carregar perfil', error); return; }
   state.sessionUser = data ? mapUsuario(data) : null;
+  if(data){
+    const org = await sb.from('feira_organizacoes').select('*').eq('id', data.organizacao_id).maybeSingle();
+    state.organizacao = org.data || null;
+  }
 }
 sb.auth.onAuthStateChange((event, session)=>{
   if(event === 'PASSWORD_RECOVERY'){
@@ -1093,8 +1127,11 @@ function renderUsuarios(view){
   }
   view.innerHTML = `
     <h2 class="section-title">Usuários</h2>
-    <p class="section-hint">Cada pessoa cria a própria conta (e-mail e senha) na tela de entrada e depois preenche o nome — ela aparece aqui como "usuário comum". Você promove a administrador ou remove o acesso quando quiser.</p>
-    <div class="notice">Para trazer alguém novo, peça para essa pessoa abrir o link do app e clicar em "Ainda não tenho conta, quero me cadastrar".</div>
+    <p class="section-hint">Pessoas da organização "${esc(state.organizacao?.nome||'')}" — cada uma cria a própria conta (e-mail e senha) e entra com o código de convite abaixo. Você promove a administrador ou remove o acesso quando quiser.</p>
+    <div class="notice">
+      <b>Código de convite:</b> <span style="font-family:monospace;font-size:14px;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">${esc(state.organizacao?.codigoConvite||state.organizacao?.codigo_convite||'')}</span><br>
+      Compartilhe com quem quiser convidar. Na tela de cadastro, a pessoa escolhe "Tenho um código" e cola isso aqui.
+    </div>
     <div id="lista-usuarios-adm"></div>
   `;
   const box = $('#lista-usuarios-adm');
