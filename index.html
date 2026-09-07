@@ -370,9 +370,15 @@ const SUPABASE_URL = 'https://wzfstallegpihgihiefg.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_TcrH8oRXCNM3x_AMbK9MPA_p9Mt4nRn';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+function mensagemAmigavelErro(msg){
+  if(!msg) return 'falha desconhecida';
+  if(msg.includes('LIMITE_USUARIOS')) return 'Limite de usuários do plano atual atingido. Faça upgrade para o Premium para adicionar mais pessoas.';
+  if(msg.includes('LIMITE_COMPRAS')) return 'Limite de compras do mês no plano atual atingido. Faça upgrade para o Premium para continuar.';
+  return msg;
+}
 function dbErr(label, error){
   console.error(label, error);
-  toast('Erro no banco (' + label + '): ' + (error?.message || 'falha desconhecida'));
+  toast(mensagemAmigavelErro(error?.message).includes('Premium') ? mensagemAmigavelErro(error?.message) : 'Erro no banco (' + label + '): ' + mensagemAmigavelErro(error?.message));
 }
 
 const CATEGORIAS = ['Hortifruti','Açougue e Carnes','Laticínios e Frios','Padaria','Mercearia','Bebidas','Congelados','Limpeza','Higiene e Beleza','Pet','Outros'];
@@ -1130,9 +1136,13 @@ function renderUsuarios(view){
     view.innerHTML = `<div class="empty">Só o administrador pode gerenciar usuários.</div>`;
     return;
   }
+  const org = state.organizacao;
+  const limiteUsu = org?.limite_usuarios;
+  const usoUsuarios = limiteUsu!=null ? `${state.usuarios.length} de ${limiteUsu} usuários usados` : `${state.usuarios.length} usuários (sem limite)`;
   view.innerHTML = `
     <h2 class="section-title">Usuários</h2>
-    <p class="section-hint">Pessoas da organização "${esc(state.organizacao?.nome||'')}". Cadastre um usuário secundário diretamente abaixo, ou use o código de convite para quem preferir criar a própria conta.</p>
+    <p class="section-hint">Pessoas da organização "${esc(org?.nome||'')}" — plano <b>${org?.plano==='premium'?'Premium':'Básico'}</b> · ${usoUsuarios}.</p>
+    ${org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu} usuários e ${org?.limite_compras_mes} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
     <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
       <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
       <div class="field"><label>E-mail</label><input required type="email" id="us-email" placeholder="maria@exemplo.com"></div>
@@ -1156,7 +1166,7 @@ async function cadastrarUsuarioSecundario(e){
 
   const {data, error} = await sb.functions.invoke('admin-criar-usuario', {body:{nome, email}});
   if(error || !data || data.error){
-    resultado.innerHTML = `<div class="notice" style="margin-bottom:14px">Não foi possível cadastrar: ${esc((data&&data.error)||error?.message||'erro desconhecido')}</div>`;
+    resultado.innerHTML = `<div class="notice" style="margin-bottom:14px">Não foi possível cadastrar: ${esc(mensagemAmigavelErro((data&&data.error)||error?.message))}</div>`;
     return false;
   }
 
@@ -1579,7 +1589,8 @@ function renderDetalheHistorico(view){
       ${gerarReciboHTML(c)}
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
-      <button class="btn" onclick="imprimirCompra('${c.id}')">🖨️ Imprimir</button>
+      <button class="btn" onclick="imprimirCompra('${c.id}')">🖨️ Imprimir${state.organizacao?.plano!=='premium'?' 🔒 Premium':''}</button>
+      ${state.organizacao?.plano!=='premium' ? `<p class="section-hint" style="margin:8px 0 0;width:100%">Impressão é um recurso do plano Premium.</p>` : ''}
       <button class="btn secondary" onclick="reutilizarCompra('${c.id}')">🔁 Reutilizar esta compra</button>
       <button class="btn warn" onclick="excluirCompraHistorico('${c.id}')">Excluir</button>
     </div>
@@ -1618,6 +1629,10 @@ function gerarReciboHTML(c){
 }
 
 function imprimirCompra(id){
+  if(state.organizacao?.plano !== 'premium'){
+    toast('A impressão da nota é um recurso do plano Premium. Faça upgrade para liberar.');
+    return;
+  }
   const c = state.historico.find(x=>x.id===id);
   if(!c) return;
   const janela = window.open('', '_blank');
