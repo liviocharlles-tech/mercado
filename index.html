@@ -447,6 +447,7 @@ let state = {
   detalheHistoricoId: null,
   mostrarFormUsuario: false,
   mostrarFormItem: false,
+  todasOrganizacoes: [],
 };
 
 async function loadAll(){
@@ -492,7 +493,7 @@ async function loadAll(){
     }));
   }
 }
-function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin}; }
+function mapUsuario(u){ return {id:u.id, nome:u.nome, admin:u.admin, superAdmin:!!u.super_admin}; }
 function mapMercado(m){ return {id:m.id, nome:m.nome, bairro:m.bairro, cidade:m.cidade, imagemUrl:m.imagem_url, cor:m.cor}; }
 function mapProduto(p){ return {id:p.id, nome:p.nome, categoria:p.categoria, unidade:p.unidade, preco:Number(p.preco), imagemUrl:p.imagem_url}; }
 function mapItem(it){ return {id:it.id, produtoId:it.produto_id, nome:it.nome, unidade:it.unidade, precoUnit:Number(it.preco_unit), quantidade:Number(it.quantidade), adicionadoPor:it.adicionado_por, imagemUrl:it.imagem_url, pego:!!it.pego, precoReal: it.preco_real===null||it.preco_real===undefined ? null : Number(it.preco_real)}; }
@@ -556,6 +557,7 @@ function render(silent){
     case 'mercados': renderMercados(content); break;
     case 'produtos': renderProdutos(content); break;
     case 'usuarios': renderUsuarios(content); break;
+    case 'clientes': renderClientes(content); break;
     case 'historico': renderHistorico(content); break;
     case 'qr': renderQR(content); break;
     default: renderCompra(content);
@@ -621,6 +623,7 @@ function renderTabs(){
     ['qr','Ler nota (QR)'],
   ];
   if(state.sessionUser.admin) items.push(['usuarios','Usuários']);
+  if(state.sessionUser.superAdmin) items.push(['clientes','Clientes']);
   tabs.innerHTML = items.map(([k,l])=>`<button class="${state.tab===k?'active':''}" onclick="setTab('${k}')">${l}</button>`).join('');
 }
 
@@ -1181,6 +1184,74 @@ async function excluirProduto(id){
 /* ---------------------------------------------------------
    Usuários (admin)
 --------------------------------------------------------- */
+async function renderClientes(view){
+  view.innerHTML = `<p class="section-hint">Carregando organizações...</p>`;
+  const {data, error} = await sb.from('feira_organizacoes').select('*').order('criado_em',{ascending:false});
+  if(error){ dbErr('carregar clientes', error); return; }
+  state.todasOrganizacoes = data || [];
+  renderListaClientes(view);
+}
+function renderListaClientes(view){
+  const orgs = state.todasOrganizacoes || [];
+  const statusInfo = {
+    trial: {label:'Teste grátis', cor:'var(--mango)'},
+    ativo: {label:'Ativo', cor:'var(--green)'},
+    inadimplente: {label:'Inadimplente', cor:'var(--red)'},
+    cancelado: {label:'Cancelado', cor:'var(--ink-faint)'},
+  };
+  view.innerHTML = `
+    <h2 class="section-title">Clientes</h2>
+    <p class="section-hint">Todas as organizações cadastradas na plataforma · ${orgs.length} no total.</p>
+    <div id="lista-clientes"></div>
+  `;
+  const box = $('#lista-clientes');
+  if(orgs.length===0){ box.innerHTML = `<div class="empty">Nenhuma organização ainda.</div>`; return; }
+  box.innerHTML = orgs.map(o=>{
+    const info = statusInfo[o.status] || {label:o.status, cor:'var(--ink-faint)'};
+    const trialFim = o.trial_fim ? new Date(o.trial_fim) : null;
+    const trialTexto = trialFim ? (trialFim.getFullYear() > 2100 ? 'sem vencimento' : trialFim.toLocaleDateString('pt-BR')) : '—';
+    return `
+    <div class="card" style="border-left:4px solid ${info.cor};">
+      <div class="row-top">
+        <div>
+          <div class="title">${esc(o.nome)}</div>
+          <div class="meta">Criada em ${new Date(o.criado_em).toLocaleDateString('pt-BR')} · trial até ${trialTexto}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="pill" style="border-color:${info.cor};color:${info.cor}">${esc(info.label)}</span>
+          <div class="meta">${o.plano==='premium'?'Premium':'Básico'}</div>
+        </div>
+      </div>
+      <div class="actions" style="flex-wrap:wrap">
+        <button onclick="mudarStatusOrg('${o.id}','ativo')" ${o.status==='ativo'?'disabled':''}>Marcar ativo</button>
+        <button onclick="mudarStatusOrg('${o.id}','inadimplente')" ${o.status==='inadimplente'?'disabled':''}>Inadimplente</button>
+        <button class="danger" onclick="mudarStatusOrg('${o.id}','cancelado')" ${o.status==='cancelado'?'disabled':''}>Cancelar</button>
+        <button onclick="mudarPlanoOrg('${o.id}','${o.plano==='premium'?'basico':'premium'}')">Trocar p/ ${o.plano==='premium'?'Básico':'Premium'}</button>
+      </div>
+    </div>
+  `;
+  }).join('');
+}
+async function mudarStatusOrg(id, status){
+  const {error} = await sb.from('feira_organizacoes').update({status}).eq('id', id);
+  if(error){ dbErr('atualizar organização', error); return; }
+  const org = (state.todasOrganizacoes||[]).find(o=>o.id===id);
+  if(org) org.status = status;
+  renderListaClientes($('#tab-content'));
+  toast('Status atualizado.');
+}
+async function mudarPlanoOrg(id, plano){
+  const patch = {plano};
+  if(plano==='premium'){ patch.limite_usuarios = null; patch.limite_compras_mes = null; }
+  else { patch.limite_usuarios = 3; patch.limite_compras_mes = 5; }
+  const {error} = await sb.from('feira_organizacoes').update(patch).eq('id', id);
+  if(error){ dbErr('atualizar organização', error); return; }
+  const org = (state.todasOrganizacoes||[]).find(o=>o.id===id);
+  if(org) Object.assign(org, patch);
+  renderListaClientes($('#tab-content'));
+  toast('Plano atualizado.');
+}
+
 function renderUsuarios(view){
   if(!state.sessionUser.admin){
     view.innerHTML = `<div class="empty">Só o administrador pode gerenciar usuários.</div>`;
