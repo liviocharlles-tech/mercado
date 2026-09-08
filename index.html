@@ -340,7 +340,7 @@
   .install-bar .linkbtn{color:var(--ink-soft);text-decoration:underline;}
 
   @media (min-width:900px){
-    .layout{display:flex;align-items:flex-start;max-width:1140px;margin:0 auto;}
+    .layout{display:flex;align-items:flex-start;}
     nav#tabs{
       flex:0 0 210px;flex-direction:column;align-items:stretch;
       border-right:1px solid var(--line);border-bottom:none;
@@ -423,6 +423,7 @@ let state = {
   mostrarFormMercado: false,
   mostrarFormProduto: false,
   detalheHistoricoId: null,
+  mostrarFormUsuario: false,
 };
 
 async function loadAll(){
@@ -538,6 +539,7 @@ function render(silent){
 function temSubtelaAberta(){
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)) return true;
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)) return true;
+  if(state.tab==='usuarios' && state.mostrarFormUsuario) return true;
   if(state.tab==='qr' && state.importadosNota) return true;
   if(state.tab==='historico' && state.detalheHistoricoId) return true;
   return false;
@@ -546,6 +548,7 @@ function voltar(){
   if(state.tab==='qr' && state.importadosNota){ state.importadosNota=null; state.importadosSelecionados=[]; render(); return; }
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)){ cancelarEdicaoMercado(); return; }
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)){ cancelarEdicaoProduto(); return; }
+  if(state.tab==='usuarios' && state.mostrarFormUsuario){ fecharNovoUsuario(); return; }
   if(state.tab==='historico' && state.detalheHistoricoId){ state.detalheHistoricoId=null; render(); return; }
   setTab('compra');
 }
@@ -1159,15 +1162,19 @@ function renderUsuarios(view){
   const org = state.organizacao;
   const limiteUsu = org?.limite_usuarios;
   const usoUsuarios = limiteUsu!=null ? `${state.usuarios.length} de ${limiteUsu} usuários usados` : `${state.usuarios.length} usuários (sem limite)`;
+  const mostrarForm = state.mostrarFormUsuario;
   view.innerHTML = `
     <h2 class="section-title">Usuários</h2>
     <p class="section-hint">Pessoas da organização "${esc(org?.nome||'')}" — plano <b>${org?.plano==='premium'?'Premium':'Básico'}</b> · ${usoUsuarios}.</p>
     ${!org ? `<div class="notice">Não consegui carregar os dados do plano agora.${state.organizacaoDebug?' Detalhe técnico: '+esc(state.organizacaoDebug):''} Tente recarregar a página.</div>` : org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu??'—'} usuários e ${org?.limite_compras_mes??'—'} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoUsuario()">+ Novo usuário</button><div style="height:14px"></div>` : `
     <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
       <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
       <div class="field"><label>E-mail</label><input required type="email" id="us-email" placeholder="maria@exemplo.com"></div>
       <button class="btn" type="submit">Cadastrar usuário</button>
+      <button type="button" class="btn secondary" style="margin-left:8px" onclick="fecharNovoUsuario()">Cancelar</button>
     </form>
+    `}
     <div id="us-resultado"></div>
     <div class="notice">
       Alternativa: compartilhe o <b>código de convite</b> <span style="font-family:monospace;font-size:13px;background:#fff;padding:2px 8px;border-radius:6px;border:1px solid var(--line);">${esc(state.organizacao?.codigoConvite||state.organizacao?.codigo_convite||'')}</span> para quem quiser criar a própria conta na tela de cadastro.
@@ -1176,6 +1183,8 @@ function renderUsuarios(view){
   `;
   atualizarListaUsuariosAdm();
 }
+function abrirNovoUsuario(){ state.mostrarFormUsuario = true; render(); }
+function fecharNovoUsuario(){ state.mostrarFormUsuario = false; render(); }
 async function cadastrarUsuarioSecundario(e){
   e.preventDefault();
   const nome = $('#us-nome').value.trim();
