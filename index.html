@@ -531,6 +531,7 @@ async function init(){
     const editando = ae && ['INPUT','SELECT','TEXTAREA'].includes(ae.tagName) && document.getElementById('app').contains(ae);
     if(editando) return; // não atualiza a tela enquanto alguém está digitando, para não apagar o que foi escrito
     if(state.tab === 'qr') return; // não redesenha a aba de QR: apagaria o resultado lido e cortaria a câmera aberta
+    if(state.tab === 'clientes') return; // não precisa de atualização em tempo real; evita o piscar de "Carregando..."
     if(temSubtelaAberta()) return; // não redesenha enquanto um formulário (produto, mercado, importação) está aberto
     const algumaListaAberta = Array.from(document.querySelectorAll('.picker-list')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
     if(algumaListaAberta) return; // não redesenha enquanto a lista de seleção está aberta
