@@ -1187,7 +1187,7 @@ async function excluirProduto(id){
 --------------------------------------------------------- */
 async function renderClientes(view){
   view.innerHTML = `<p class="section-hint">Carregando organizações...</p>`;
-  const {data, error} = await sb.from('feira_organizacoes').select('*').order('criado_em',{ascending:false});
+  const {data, error} = await sb.rpc('listar_clientes_admin');
   if(error){ dbErr('carregar clientes', error); return; }
   state.todasOrganizacoes = data || [];
   renderListaClientes(view);
@@ -1215,8 +1215,9 @@ function renderListaClientes(view){
     <div class="card" style="border-left:4px solid ${info.cor};">
       <div class="row-top">
         <div>
-          <div class="title">${esc(o.nome)}</div>
-          <div class="meta">Criada em ${new Date(o.criado_em).toLocaleDateString('pt-BR')} · trial até ${trialTexto}</div>
+          <div class="title">${esc(o.organizacao_nome)}</div>
+          <div class="meta">Responsável: ${esc(o.admin_nome||'—')} · ${esc(o.admin_email||'sem e-mail')}</div>
+          <div class="meta">${o.qtd_usuarios} usuário(s) · criada em ${new Date(o.criado_em).toLocaleDateString('pt-BR')} · trial até ${trialTexto}</div>
         </div>
         <div style="text-align:right">
           <span class="pill" style="border-color:${info.cor};color:${info.cor}">${esc(info.label)}</span>
@@ -1224,10 +1225,10 @@ function renderListaClientes(view){
         </div>
       </div>
       <div class="actions" style="flex-wrap:wrap">
-        <button onclick="mudarStatusOrg('${o.id}','ativo')" ${o.status==='ativo'?'disabled':''}>Marcar ativo</button>
-        <button onclick="mudarStatusOrg('${o.id}','inadimplente')" ${o.status==='inadimplente'?'disabled':''}>Inadimplente</button>
-        <button class="danger" onclick="mudarStatusOrg('${o.id}','cancelado')" ${o.status==='cancelado'?'disabled':''}>Cancelar</button>
-        <button onclick="mudarPlanoOrg('${o.id}','${o.plano==='premium'?'basico':'premium'}')">Trocar p/ ${o.plano==='premium'?'Básico':'Premium'}</button>
+        <button onclick="mudarStatusOrg('${o.organizacao_id}','ativo')" ${o.status==='ativo'?'disabled':''}>Marcar ativo</button>
+        <button onclick="mudarStatusOrg('${o.organizacao_id}','inadimplente')" ${o.status==='inadimplente'?'disabled':''}>Inadimplente</button>
+        <button class="danger" onclick="mudarStatusOrg('${o.organizacao_id}','cancelado')" ${o.status==='cancelado'?'disabled':''}>Cancelar</button>
+        <button onclick="mudarPlanoOrg('${o.organizacao_id}','${o.plano==='premium'?'basico':'premium'}')">Trocar p/ ${o.plano==='premium'?'Básico':'Premium'}</button>
       </div>
     </div>
   `;
@@ -1236,7 +1237,7 @@ function renderListaClientes(view){
 async function mudarStatusOrg(id, status){
   const {error} = await sb.from('feira_organizacoes').update({status}).eq('id', id);
   if(error){ dbErr('atualizar organização', error); return; }
-  const org = (state.todasOrganizacoes||[]).find(o=>o.id===id);
+  const org = (state.todasOrganizacoes||[]).find(o=>o.organizacao_id===id);
   if(org) org.status = status;
   renderListaClientes($('#tab-content'));
   toast('Status atualizado.');
@@ -1247,7 +1248,7 @@ async function mudarPlanoOrg(id, plano){
   else { patch.limite_usuarios = 3; patch.limite_compras_mes = 5; }
   const {error} = await sb.from('feira_organizacoes').update(patch).eq('id', id);
   if(error){ dbErr('atualizar organização', error); return; }
-  const org = (state.todasOrganizacoes||[]).find(o=>o.id===id);
+  const org = (state.todasOrganizacoes||[]).find(o=>o.organizacao_id===id);
   if(org) Object.assign(org, patch);
   renderListaClientes($('#tab-content'));
   toast('Plano atualizado.');
