@@ -1325,6 +1325,13 @@ function renderUsuarios(view){
     <h2 class="section-title">Usuários</h2>
     <p class="section-hint">Pessoas da organização "${esc(org?.nome||'')}" — plano <b>${org?.plano==='premium'?'Premium':'Básico'}</b> · ${usoUsuarios}.</p>
     ${!org ? `<div class="notice">Não consegui carregar os dados do plano agora.${state.organizacaoDebug?' Detalhe técnico: '+esc(state.organizacaoDebug):''} Tente recarregar a página.</div>` : org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu??'—'} usuários e ${org?.limite_compras_mes??'—'} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
+    ${org && org.status!=='ativo' ? `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn secondary" onclick="assinarPlano('basico')">Assinar Básico — R$ 14,90/mês</button>
+        <button class="btn" onclick="assinarPlano('premium')">Assinar Premium — R$ 39,90/mês</button>
+      </div>
+      <div id="assinatura-status"></div>
+    ` : ''}
     ${!mostrarForm ? `<button class="btn" onclick="abrirNovoUsuario()">+ Novo usuário</button><div style="height:10px"></div>` : `
     <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
       <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
@@ -1350,6 +1357,19 @@ async function salvarEdicaoUsuario(id){
   await loadAll();
   atualizarListaUsuariosAdm();
   toast('Nome atualizado.');
+}
+async function assinarPlano(plano){
+  const status = $('#assinatura-status');
+  if(status) status.innerHTML = `<p class="section-hint" style="margin:8px 0 0">Preparando pagamento...</p>`;
+  const {data, error} = await sb.functions.invoke('mp-criar-assinatura', {
+    body: {plano, back_url: window.location.origin + window.location.pathname}
+  });
+  if(error || !data || data.error){
+    const msg = mensagemAmigavelErro((data&&data.error)||error?.message);
+    if(status) status.innerHTML = `<div class="notice">Não foi possível iniciar a assinatura: ${esc(msg)}</div>`;
+    return;
+  }
+  window.location.href = data.init_point;
 }
 function abrirNovoUsuario(){ state.mostrarFormUsuario = true; render(); }
 function fecharNovoUsuario(){ state.mostrarFormUsuario = false; render(); }
