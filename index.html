@@ -444,6 +444,7 @@ let state = {
   mostrarFormProduto: false,
   detalheHistoricoId: null,
   mostrarFormUsuario: false,
+  mostrarFormItem: false,
 };
 
 async function loadAll(){
@@ -564,6 +565,7 @@ function temSubtelaAberta(){
   if(state.tab==='usuarios' && state.mostrarFormUsuario) return true;
   if(state.tab==='qr' && state.importadosNota) return true;
   if(state.tab==='historico' && state.detalheHistoricoId) return true;
+  if(state.tab==='compra' && state.mostrarFormItem) return true;
   return false;
 }
 function voltar(){
@@ -572,6 +574,7 @@ function voltar(){
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)){ cancelarEdicaoProduto(); return; }
   if(state.tab==='usuarios' && state.mostrarFormUsuario){ fecharNovoUsuario(); return; }
   if(state.tab==='historico' && state.detalheHistoricoId){ state.detalheHistoricoId=null; render(); return; }
+  if(state.tab==='compra' && state.mostrarFormItem){ fecharFormItem(); return; }
   setTab('compra');
 }
 function renderBackBar(){
@@ -1339,6 +1342,7 @@ function renderCompra(view){
     <p class="section-hint">Lista em aberto · iniciada em ${new Date(c.criadoEm).toLocaleString('pt-BR')}. Atualiza sozinha a cada poucos segundos para todo mundo.</p>
     ${renderPresencaHTML(c.presencas)}
 
+    ${!state.mostrarFormItem ? `<button class="btn" onclick="abrirFormItem()">+ Adicionar item</button><div style="height:10px"></div>` : `
     <form class="form-block" onsubmit="return adicionarItem(event)" style="display:flex;flex-direction:column;">
       <div class="field"><label>Produto</label>
         ${produtosDisponiveis.length===0 ? `<div class="section-hint" style="margin:0">Nenhum produto cadastrado.</div>` : `
@@ -1358,7 +1362,9 @@ function renderCompra(view){
       </div>
       <p class="section-hint" id="it-preco-hint" style="margin:-6px 0 10px"></p>
       <button class="btn" type="submit" ${produtosDisponiveis.length===0?'disabled':''}>Adicionar à lista</button>
+      <button type="button" class="btn secondary" style="margin-top:8px" onclick="fecharFormItem()">Ocultar formulário</button>
     </form>
+    `}
 
     ${c.itens.length===0 ? `<div class="empty">A lista está vazia. Adicione o primeiro item acima.</div>` : `
     <p class="section-hint" style="margin-bottom:6px">${c.itens.filter(i=>i.pego).length} de ${c.itens.length} já no carrinho</p>
@@ -1477,6 +1483,8 @@ async function iniciarCompra(e){
   render();
   return false;
 }
+function abrirFormItem(){ state.mostrarFormItem = true; render(); }
+function fecharFormItem(){ state.mostrarFormItem = false; render(); }
 async function adicionarItem(e){
   e.preventDefault();
   const produtoId = $('#it-produto').value;
