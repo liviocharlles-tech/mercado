@@ -351,14 +351,19 @@
     }
     nav#tabs button{width:100%;text-align:left;}
     main#view{flex:1;max-width:none !important;margin:0 !important;min-width:0;padding:18px 28px 60px !important;}
-    header.receipt-head{padding:14px 24px 12px;}
-    .userbar{margin-top:6px !important;}
+    header.receipt-head{padding:10px 24px 8px;}
+    header.receipt-head h1{font-size:17px !important;}
+    header.receipt-head .sub{font-size:11px !important;}
+    .userbar{margin-top:4px !important;}
     h2.section-title{font-size:16px !important;margin-bottom:2px !important;}
-    p.section-hint{margin-bottom:10px !important;}
-    .card{padding:10px 14px !important;margin-bottom:8px !important;}
+    p.section-hint{margin-bottom:8px !important;}
+    .card{padding:8px 14px !important;margin-bottom:6px !important;}
+    .compact-card{padding:6px 14px !important;margin-bottom:4px !important;}
     .card .actions{margin-top:6px !important;}
-    form.form-block{padding:14px !important;margin-bottom:12px !important;}
+    form.form-block{padding:14px !important;margin-bottom:10px !important;}
     form.form-block .field{margin-bottom:8px !important;}
+    .notice{padding:8px 10px !important;margin:6px 0 !important;}
+    main#view{padding:12px 28px 40px !important;}
   }
 </style>
 </head>
@@ -812,7 +817,7 @@ function renderMercados(view){
   view.innerHTML = `
     <h2 class="section-title">Supermercados da região</h2>
     <p class="section-hint">Mercados onde vocês costumam comprar, na Região Metropolitana do Recife.</p>
-    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoMercado()">+ Novo mercado</button><div style="height:14px"></div>` : ''}
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoMercado()">+ Novo mercado</button><div style="height:10px"></div>` : ''}
     ${mostrarForm ? `
     <form class="form-block" onsubmit="return salvarMercado(event)">
       <div class="field"><label>Nome do mercado</label><input required id="mc-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Bompreço Shopping Recife"></div>
@@ -1032,7 +1037,7 @@ function renderProdutos(view){
   view.innerHTML = `
     <h2 class="section-title">Produtos</h2>
     <p class="section-hint">Nome, categoria, unidade de medida, preço atual e uma foto (opcional). Qualquer usuário cadastrado pode inserir, editar ou excluir.</p>
-    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoProduto()">+ Novo produto</button><div style="height:14px"></div>` : ''}
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoProduto()">+ Novo produto</button><div style="height:10px"></div>` : ''}
     ${mostrarForm ? `
     <form class="form-block" onsubmit="return salvarProduto(event)">
       <div class="field"><label>Nome do produto</label><input required id="pr-nome" value="${ed?esc(ed.nome):''}" placeholder="Ex.: Arroz branco"></div>
@@ -1177,7 +1182,7 @@ function renderUsuarios(view){
     <h2 class="section-title">Usuários</h2>
     <p class="section-hint">Pessoas da organização "${esc(org?.nome||'')}" — plano <b>${org?.plano==='premium'?'Premium':'Básico'}</b> · ${usoUsuarios}.</p>
     ${!org ? `<div class="notice">Não consegui carregar os dados do plano agora.${state.organizacaoDebug?' Detalhe técnico: '+esc(state.organizacaoDebug):''} Tente recarregar a página.</div>` : org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu??'—'} usuários e ${org?.limite_compras_mes??'—'} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
-    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoUsuario()">+ Novo usuário</button><div style="height:14px"></div>` : `
+    ${!mostrarForm ? `<button class="btn" onclick="abrirNovoUsuario()">+ Novo usuário</button><div style="height:10px"></div>` : `
     <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
       <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
       <div class="field"><label>E-mail</label><input required type="email" id="us-email" placeholder="maria@exemplo.com"></div>
