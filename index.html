@@ -188,6 +188,8 @@
   .card .meta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
   .card .price{font-weight:800;color:var(--green);font-size:14.5px;white-space:nowrap;}
   .card .actions{display:flex;gap:8px;margin-top:12px;}
+  .compact-card{padding:10px 14px;margin-bottom:6px;}
+  .compact-card .actions button{font-size:11px;padding:5px 10px;}
   .card .actions button{
     font-size:11.5px;border:1px solid var(--line);background:var(--surface-2);
     padding:6px 12px;cursor:pointer;font-family:'Manrope';font-weight:700;color:var(--ink);
@@ -1223,19 +1225,25 @@ async function cadastrarUsuarioSecundario(e){
 function atualizarListaUsuariosAdm(){
   const box = $('#lista-usuarios-adm');
   if(!box) return;
-  box.innerHTML = state.usuarios.map(u=>`
-    <div class="card">
+  const admins = state.usuarios.filter(u=>u.admin);
+  const membros = state.usuarios.filter(u=>!u.admin);
+  const cardUsuario = u => `
+    <div class="card compact-card">
       <div class="row-top">
-        <div>
-          <div class="title">${esc(u.nome)}${u.admin?'<span class="pill">admin</span>':''}</div>
+        <div class="title">${esc(u.nome)}${u.id===state.sessionUser.id?' <span class="meta">(você)</span>':''}</div>
+        <div class="actions" style="margin:0">
+          <button onclick="alternarAdmin('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>${u.admin?'Remover admin':'Tornar admin'}</button>
+          <button class="danger" onclick="excluirUsuario('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>Remover acesso</button>
         </div>
       </div>
-      <div class="actions">
-        <button onclick="alternarAdmin('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>${u.admin?'Remover admin':'Tornar admin'}</button>
-        <button class="danger" onclick="excluirUsuario('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>Remover acesso</button>
-      </div>
     </div>
-  `).join('');
+  `;
+  box.innerHTML = `
+    <p class="section-hint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:0.4px;">Administradores · ${admins.length}</p>
+    ${admins.map(cardUsuario).join('')}
+    <p class="section-hint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:0.4px;">Usuários · ${membros.length}</p>
+    ${membros.length ? membros.map(cardUsuario).join('') : `<div class="empty" style="padding:14px">Nenhum usuário comum ainda — cadastre um acima.</div>`}
+  `;
 }
 async function alternarAdmin(id){
   const u = state.usuarios.find(x=>x.id===id);
