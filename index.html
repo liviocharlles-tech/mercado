@@ -525,6 +525,8 @@ async function init(){
     if(temSubtelaAberta()) return; // não redesenha enquanto um formulário (produto, mercado, importação) está aberto
     const algumaListaAberta = Array.from(document.querySelectorAll('.picker-list')).some(el => el.style.display !== 'none' && el.offsetParent !== null);
     if(algumaListaAberta) return; // não redesenha enquanto a lista de seleção está aberta
+    const selecaoPendente = ($('#it-produto')?.value) || ($('#cp-mercado')?.value);
+    if(selecaoPendente) return; // não redesenha enquanto um produto/mercado foi escolhido mas ainda não confirmado
     await loadAll();
     render(true);
   }, 4000);
