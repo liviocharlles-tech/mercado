@@ -758,6 +758,8 @@ async function checarPerfil(){
   state.sessionUser = data ? mapUsuario(data) : null;
   if(data){
     const org = await sb.from('feira_organizacoes').select('*').eq('id', data.organizacao_id).maybeSingle();
+    if(org.error) dbErr('carregar organização', org.error);
+    else if(!org.data) toast('Aviso: dados da organização não encontrados (id: '+data.organizacao_id+').');
     state.organizacao = org.data || null;
   }
 }
@@ -1142,7 +1144,7 @@ function renderUsuarios(view){
   view.innerHTML = `
     <h2 class="section-title">Usuários</h2>
     <p class="section-hint">Pessoas da organização "${esc(org?.nome||'')}" — plano <b>${org?.plano==='premium'?'Premium':'Básico'}</b> · ${usoUsuarios}.</p>
-    ${org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu} usuários e ${org?.limite_compras_mes} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
+    ${!org ? `<div class="notice">Não consegui carregar os dados do plano agora. Tente recarregar a página.</div>` : org?.plano!=='premium' ? `<div class="notice">Plano Básico: até ${limiteUsu??'—'} usuários e ${org?.limite_compras_mes??'—'} compras por mês, sem impressão de nota. Faça upgrade pro Premium pra liberar tudo.</div>` : ''}
     <form class="form-block" onsubmit="return cadastrarUsuarioSecundario(event)">
       <div class="field"><label>Nome</label><input required id="us-nome" placeholder="Ex.: Maria"></div>
       <div class="field"><label>E-mail</label><input required type="email" id="us-email" placeholder="maria@exemplo.com"></div>
