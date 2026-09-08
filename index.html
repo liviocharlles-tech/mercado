@@ -448,6 +448,8 @@ let state = {
   mostrarFormUsuario: false,
   mostrarFormItem: false,
   todasOrganizacoes: [],
+  editingOrgId: null,
+  editingUsuarioId: null,
 };
 
 async function loadAll(){
@@ -567,19 +569,22 @@ function render(silent){
 function temSubtelaAberta(){
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)) return true;
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)) return true;
-  if(state.tab==='usuarios' && state.mostrarFormUsuario) return true;
+  if(state.tab==='usuarios' && (state.mostrarFormUsuario || state.editingUsuarioId)) return true;
   if(state.tab==='qr' && state.importadosNota) return true;
   if(state.tab==='historico' && state.detalheHistoricoId) return true;
   if(state.tab==='compra' && state.mostrarFormItem) return true;
+  if(state.tab==='clientes' && state.editingOrgId) return true;
   return false;
 }
 function voltar(){
   if(state.tab==='qr' && state.importadosNota){ state.importadosNota=null; state.importadosSelecionados=[]; render(); return; }
   if(state.tab==='mercados' && (state.mostrarFormMercado || state.editing.mercado)){ cancelarEdicaoMercado(); return; }
   if(state.tab==='produtos' && (state.mostrarFormProduto || state.editing.produto)){ cancelarEdicaoProduto(); return; }
+  if(state.tab==='usuarios' && state.editingUsuarioId){ state.editingUsuarioId=null; atualizarListaUsuariosAdm(); return; }
   if(state.tab==='usuarios' && state.mostrarFormUsuario){ fecharNovoUsuario(); return; }
   if(state.tab==='historico' && state.detalheHistoricoId){ state.detalheHistoricoId=null; render(); return; }
   if(state.tab==='compra' && state.mostrarFormItem){ fecharFormItem(); return; }
+  if(state.tab==='clientes' && state.editingOrgId){ state.editingOrgId=null; renderListaClientes($('#tab-content')); return; }
   setTab('compra');
 }
 function renderBackBar(){
@@ -1211,6 +1216,38 @@ function renderListaClientes(view){
     const info = statusInfo[o.status] || {label:o.status, cor:'var(--ink-faint)'};
     const trialFim = o.trial_fim ? new Date(o.trial_fim) : null;
     const trialTexto = trialFim ? (trialFim.getFullYear() > 2100 ? 'sem vencimento' : trialFim.toLocaleDateString('pt-BR')) : '—';
+
+    if(state.editingOrgId === o.organizacao_id){
+      const trialInputValue = trialFim ? trialFim.toISOString().slice(0,10) : '';
+      return `
+      <div class="card" style="border-left:4px solid ${info.cor};">
+        <div class="field"><label>Nome da organização</label><input id="org-edit-nome" value="${esc(o.organizacao_nome)}"></div>
+        <div class="field-row">
+          <div class="field"><label>Status</label>
+            <select id="org-edit-status">
+              ${Object.keys(statusInfo).map(k=>`<option value="${k}" ${o.status===k?'selected':''}>${statusInfo[k].label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Plano</label>
+            <select id="org-edit-plano">
+              <option value="basico" ${o.plano==='basico'?'selected':''}>Básico</option>
+              <option value="premium" ${o.plano==='premium'?'selected':''}>Premium</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Teste grátis até</label><input type="date" id="org-edit-trial" value="${trialInputValue}"></div>
+        <div class="field-row">
+          <div class="field"><label>Limite de usuários (vazio = sem limite)</label><input type="number" min="1" id="org-edit-limite-usu" value="${o.limite_usuarios??''}"></div>
+          <div class="field"><label>Limite de compras/mês (vazio = sem limite)</label><input type="number" min="1" id="org-edit-limite-compras" value="${o.limite_compras_mes??''}"></div>
+        </div>
+        <div class="actions">
+          <button class="primary" onclick="salvarEdicaoOrg('${o.organizacao_id}')">Salvar</button>
+          <button onclick="state.editingOrgId=null; renderListaClientes($('#tab-content'));">Cancelar</button>
+        </div>
+      </div>
+    `;
+    }
+
     return `
     <div class="card" style="border-left:4px solid ${info.cor};">
       <div class="row-top">
@@ -1225,6 +1262,7 @@ function renderListaClientes(view){
         </div>
       </div>
       <div class="actions" style="flex-wrap:wrap">
+        <button onclick="state.editingOrgId='${o.organizacao_id}'; renderListaClientes($('#tab-content'));">Editar</button>
         <button onclick="mudarStatusOrg('${o.organizacao_id}','ativo')" ${o.status==='ativo'?'disabled':''}>Marcar ativo</button>
         <button onclick="mudarStatusOrg('${o.organizacao_id}','inadimplente')" ${o.status==='inadimplente'?'disabled':''}>Inadimplente</button>
         <button class="danger" onclick="mudarStatusOrg('${o.organizacao_id}','cancelado')" ${o.status==='cancelado'?'disabled':''}>Cancelar</button>
@@ -1252,6 +1290,26 @@ async function mudarPlanoOrg(id, plano){
   if(org) Object.assign(org, patch);
   renderListaClientes($('#tab-content'));
   toast('Plano atualizado.');
+}
+async function salvarEdicaoOrg(id){
+  const nome = $('#org-edit-nome').value.trim();
+  if(!nome) { toast('O nome não pode ficar vazio.'); return; }
+  const status = $('#org-edit-status').value;
+  const plano = $('#org-edit-plano').value;
+  const trialInput = $('#org-edit-trial').value;
+  const limiteUsuInput = $('#org-edit-limite-usu').value.trim();
+  const limiteComprasInput = $('#org-edit-limite-compras').value.trim();
+  const patch = {
+    nome, status, plano,
+    trial_fim: trialInput ? new Date(trialInput + 'T23:59:59').toISOString() : null,
+    limite_usuarios: limiteUsuInput === '' ? null : parseInt(limiteUsuInput, 10),
+    limite_compras_mes: limiteComprasInput === '' ? null : parseInt(limiteComprasInput, 10),
+  };
+  const {error} = await sb.from('feira_organizacoes').update(patch).eq('id', id);
+  if(error){ dbErr('salvar organização', error); return; }
+  state.editingOrgId = null;
+  await renderClientes($('#tab-content'));
+  toast('Organização atualizada.');
 }
 
 function renderUsuarios(view){
@@ -1282,6 +1340,16 @@ function renderUsuarios(view){
     <div id="lista-usuarios-adm"></div>
   `;
   atualizarListaUsuariosAdm();
+}
+async function salvarEdicaoUsuario(id){
+  const nome = $('#usu-edit-nome-'+id).value.trim();
+  if(!nome){ toast('O nome não pode ficar vazio.'); return; }
+  const {error} = await sb.from('feira_usuarios').update({nome}).eq('id', id);
+  if(error){ dbErr('salvar usuário', error); return; }
+  state.editingUsuarioId = null;
+  await loadAll();
+  atualizarListaUsuariosAdm();
+  toast('Nome atualizado.');
 }
 function abrirNovoUsuario(){ state.mostrarFormUsuario = true; render(); }
 function fecharNovoUsuario(){ state.mostrarFormUsuario = false; render(); }
@@ -1317,17 +1385,31 @@ function atualizarListaUsuariosAdm(){
   if(!box) return;
   const admins = state.usuarios.filter(u=>u.admin);
   const membros = state.usuarios.filter(u=>!u.admin);
-  const cardUsuario = u => `
+  const cardUsuario = u => {
+    if(state.editingUsuarioId === u.id){
+      return `
+      <div class="card compact-card">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="usu-edit-nome-${u.id}" value="${esc(u.nome)}" style="flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:8px;">
+          <button class="primary" onclick="salvarEdicaoUsuario('${u.id}')">Salvar</button>
+          <button onclick="state.editingUsuarioId=null; atualizarListaUsuariosAdm();">Cancelar</button>
+        </div>
+      </div>
+    `;
+    }
+    return `
     <div class="card compact-card">
       <div class="row-top">
         <div class="title">${esc(u.nome)}${u.id===state.sessionUser.id?' <span class="meta">(você)</span>':''}</div>
         <div class="actions" style="margin:0">
+          <button onclick="state.editingUsuarioId='${u.id}'; atualizarListaUsuariosAdm();">Editar</button>
           <button onclick="alternarAdmin('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>${u.admin?'Remover admin':'Tornar admin'}</button>
           <button class="danger" onclick="excluirUsuario('${u.id}')" ${u.id===state.sessionUser.id?'disabled':''}>Remover acesso</button>
         </div>
       </div>
     </div>
   `;
+  };
   box.innerHTML = `
     <p class="section-hint" style="margin:14px 0 6px;font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:0.4px;">Administradores · ${admins.length}</p>
     ${admins.map(cardUsuario).join('')}
